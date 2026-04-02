@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=390, initial-scale=1.0">
+<title>我的灵魂档案 · SoulMatch</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; -webkit-font-smoothing:antialiased; }
+body { width:390px; height:844px; overflow:hidden; font-family:-apple-system,'PingFang SC','Helvetica Neue',sans-serif; background:#F2F2F7; display:flex; flex-direction:column; }
+
+/* STATUS BAR */
+.status-bar { width:390px; height:54px; display:flex; align-items:center; justify-content:space-between; padding:14px 20px 0; flex-shrink:0; transition:background .3s; }
+.status-bar.purple { background:#6C5CE7; }
+.status-bar.white  { background:#fff; border-bottom:0.5px solid #E5E5EA; }
+.status-time-p { font-size:15px; font-weight:600; color:#fff; }
+.status-time-w { font-size:15px; font-weight:600; color:#000; }
+.status-icons-p { display:flex; align-items:center; gap:6px; }
+.status-icons-w { display:flex; align-items:center; gap:6px; }
+
+/* NAV */
+.nav-view { background:#6C5CE7; padding:8px 20px 18px; flex-shrink:0; display:flex; justify-content:space-between; align-items:flex-end; }
+.nav-view-title { font-size:34px; font-weight:700; color:#fff; letter-spacing:-0.5px; }
+.nav-edit-btn { color:rgba(255,255,255,.85); font-size:16px; padding:4px 0; display:flex; align-items:center; gap:4px; cursor:pointer; }
+.nav-edit { background:#fff; height:44px; display:flex; align-items:center; justify-content:space-between; padding:0 16px; flex-shrink:0; border-bottom:0.5px solid #E5E5EA; }
+.nav-edit-title { font-size:17px; font-weight:600; color:#1C1C1E; }
+.nav-cancel { font-size:16px; color:#6C5CE7; cursor:pointer; }
+.nav-save { font-size:16px; color:#6C5CE7; font-weight:600; cursor:pointer; }
+
+/* SCROLL */
+.scroll-content { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+.scroll-content::-webkit-scrollbar { display:none; }
+
+/* HERO */
+.hero-card { background:linear-gradient(135deg,#6C5CE7,#a29bfe); padding:24px 20px 28px; position:relative; overflow:hidden; }
+.hero-card::before { content:''; position:absolute; top:-40px; right:-40px; width:160px; height:160px; border-radius:50%; background:rgba(255,255,255,.08); }
+.hero-top { display:flex; align-items:center; gap:16px; margin-bottom:16px; position:relative; z-index:1; }
+.avatar { width:64px; height:64px; border-radius:50%; background:rgba(255,255,255,.25); display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:700; color:#fff; border:2.5px solid rgba(255,255,255,.5); flex-shrink:0; }
+.hero-name { font-size:22px; font-weight:700; color:#fff; margin-bottom:4px; }
+.hero-sub  { font-size:14px; color:rgba(255,255,255,.85); }
+.hero-tags { display:flex; flex-wrap:wrap; gap:8px; position:relative; z-index:1; }
+.hero-tag  { background:rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.35); color:#fff; font-size:12px; padding:4px 10px; border-radius:20px; }
+/* SECTION CARDS */
+.section-card { background:#fff; border-radius:16px; padding:16px; margin:12px 16px 0; box-shadow:0 2px 12px rgba(0,0,0,.06); }
+.section-title { font-size:16px; font-weight:700; color:#1C1C1E; margin-bottom:14px; }
+.analysis-text { font-size:14px; color:#3D3D5C; line-height:1.7; }
+
+/* TRAIT BARS */
+.trait-row { margin-bottom:14px; }
+.trait-row:last-child { margin-bottom:0; }
+.trait-header { display:flex; justify-content:space-between; margin-bottom:6px; font-size:13px; color:#3D3D5C; font-weight:500; }
+.trait-pct { color:#6C5CE7; font-weight:600; }
+.trait-bg { height:8px; background:#F2F2F7; border-radius:4px; overflow:hidden; }
+.trait-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,#6C5CE7,#a29bfe); }
+
+/* MATCH LIST */
+.match-item { display:flex; align-items:flex-start; gap:10px; margin-bottom:12px; font-size:14px; color:#1C1C1E; line-height:1.5; }
+.match-item:last-child { margin-bottom:0; }
+.match-icon { width:20px; height:20px; flex-shrink:0; margin-top:1px; }
+
+/* CTA */
+.cta-wrap { padding:16px 16px 0; }
+.btn-green { width:100%; padding:16px; background:#00B894; color:#fff; border:none; border-radius:14px; font-size:17px; font-weight:600; cursor:pointer; }
+.section-last { margin-bottom:12px; }
+
+/* ── EDIT MODE ── */
+.edit-section { background:#fff; border-radius:16px; padding:16px; margin:12px 16px 0; box-shadow:0 2px 12px rgba(0,0,0,.06); }
+.edit-section-title { font-size:13px; font-weight:600; color:#8E8E93; text-transform:uppercase; letter-spacing:.5px; margin-bottom:14px; }
+.avatar-edit-row { display:flex; justify-content:center; margin-bottom:4px; }
+.avatar-edit { width:80px; height:80px; border-radius:50%; background:linear-gradient(135deg,#6C5CE7,#a29bfe); display:flex; align-items:center; justify-content:center; font-size:32px; font-weight:700; color:#fff; position:relative; }
+.avatar-cam { position:absolute; bottom:0; right:0; width:26px; height:26px; border-radius:50%; background:#fff; border:2px solid #F2F2F7; display:flex; align-items:center; justify-content:center; }
+.avatar-hint { text-align:center; font-size:12px; color:#8E8E93; margin-bottom:16px; }
+.form-row { margin-bottom:14px; }
+.form-label { font-size:13px; color:#8E8E93; margin-bottom:6px; }
+.form-input { width:100%; background:#F2F2F7; border:none; border-radius:10px; padding:11px 14px; font-size:15px; color:#1C1C1E; font-family:inherit; outline:none; }
+.form-textarea { width:100%; background:#F2F2F7; border:none; border-radius:10px; padding:11px 14px; font-size:15px; color:#1C1C1E; font-family:inherit; outline:none; resize:none; height:80px; line-height:1.5; }
+.form-row-2col { display:flex; gap:10px; }
+.form-row-2col .form-row { flex:1; margin-bottom:0; }
+
+/* TAGS */
+.tags-grid { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:4px; }
+.tag-chip { padding:7px 14px; border-radius:20px; font-size:13px; cursor:pointer; border:1.5px solid #E5E5EA; color:#3D3D5C; background:#fff; transition:all .15s; }
+.tag-chip.selected { background:#6C5CE7; border-color:#6C5CE7; color:#fff; }
+.tag-add { padding:7px 14px; border-radius:20px; font-size:13px; border:1.5px dashed #C7C7CC; color:#8E8E93; background:#fff; cursor:pointer; }
+.mbti-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:4px; }
+.mbti-chip { padding:7px 14px; border-radius:20px; font-size:13px; cursor:pointer; border:1.5px solid #E5E5EA; color:#3D3D5C; background:#fff; }
+.mbti-chip.selected { background:#6C5CE7; border-color:#6C5CE7; color:#fff; }
+
+/* IMPORT */
+.import-item { display:flex; align-items:center; gap:12px; padding:13px 0; border-bottom:0.5px solid #F2F2F7; cursor:pointer; }
+.import-item:last-child { border-bottom:none; }
+.import-icon { width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.import-info { flex:1; }
+.import-name { font-size:15px; font-weight:500; color:#1C1C1E; margin-bottom:2px; }
+.import-desc { font-size:12px; color:#8E8E93; line-height:1.4; }
+.import-badge { font-size:11px; padding:3px 8px; border-radius:10px; font-weight:600; white-space:nowrap; }
+.badge-hot { background:#FFF0F0; color:#E55353; }
+.badge-safe { background:#F0FFF8; color:#00B894; }
+.badge-new  { background:#F0EDFF; color:#6C5CE7; }
+.import-toggle { width:22px; height:22px; border-radius:50%; border:2px solid #E5E5EA; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+.import-toggle.on { background:#6C5CE7; border-color:#6C5CE7; }
+.privacy-note { background:#FFF9E6; border-radius:10px; padding:10px 12px; margin-top:12px; font-size:12px; color:#5A4A00; line-height:1.5; display:flex; gap:8px; }
+
+/* TAB BAR */
+.tab-bar { height:83px; background:rgba(255,255,255,.95); border-top:0.5px solid #E5E5EA; display:flex; align-items:flex-start; padding-top:10px; flex-shrink:0; }
+.tab-item { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; font-size:10px; color:#8E8E93; }
+.tab-item.active { color:#6C5CE7; }
+</style>
+</head>
+<body>
+<!-- VIEW MODE -->
+<div id="view-mode">
+  <div class="status-bar purple">
+    <span class="status-time-p">9:41</span>
+    <div class="status-icons-p">
+      <svg width="17" height="12" viewBox="0 0 17 12" fill="none"><rect x="0" y="3" width="3" height="9" rx="1" fill="#fff"/><rect x="4.5" y="2" width="3" height="10" rx="1" fill="#fff"/><rect x="9" y="0" width="3" height="12" rx="1" fill="#fff"/><rect x="13.5" y="0" width="3" height="12" rx="1" fill="#fff" opacity=".4"/></svg>
+      <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 2.4C10.4 2.4 12.6 3.4 14.1 5L15.5 3.5C13.6 1.4 11 0 8 0 5 0 2.4 1.4.5 3.5L1.9 5C3.4 3.4 5.6 2.4 8 2.4Z" fill="#fff"/><path d="M8 5.6C9.6 5.6 11 6.2 12.1 7.2L13.5 5.8C12 4.4 10.1 3.6 8 3.6 5.9 3.6 4 4.4 2.5 5.8L3.9 7.2C5 6.2 6.4 5.6 8 5.6Z" fill="#fff"/><circle cx="8" cy="10" r="2" fill="#fff"/></svg>
+      <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x=".5" y=".5" width="21" height="11" rx="3.5" stroke="#fff" stroke-opacity=".5"/><rect x="2" y="2" width="16" height="8" rx="2" fill="#fff"/><path d="M23 4.5V7.5C23.8 7.2 24.5 6.5 24.5 6 24.5 5.5 23.8 4.8 23 4.5Z" fill="#fff" opacity=".5"/></svg>
+    </div>
+  </div>
+  <div class="nav-view">
+    <span class="nav-view-title">我的灵魂档案</span>
+    <span class="nav-edit-btn" onclick="switchToEdit()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.85)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      编辑资料
+    </span>
+  </div>
+  <div class="scroll-content">
+    <div class="hero-card">
+      <div class="hero-top">
+        <div class="avatar">陈</div>
+        <div>
+          <div class="hero-name">陈晓雨</div>
+          <div class="hero-sub">INFJ · 理想主义探索者</div>
+        </div>
+      </div>
+      <div class="hero-tags">
+        <span class="hero-tag">深度思考者</span>
+        <span class="hero-tag">共情力强</span>
+        <span class="hero-tag">价值观驱动</span>
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="section-title">AI 性格解析</div>
+      <div class="analysis-text">你是一个有强烈内在价值观的人。在社交中，你更看重深度而非广度，倾向于与少数真正理解你的人建立长期连接。你对表面化的社交感到疲惫，渴望那种「不用解释就懂」的灵魂共鸣。</div>
+    </div>
+    <div class="section-card">
+      <div class="section-title">你的社交密码</div>
+      <div class="trait-row"><div class="trait-header"><span>深度 vs 广度</span><span class="trait-pct">82%</span></div><div class="trait-bg"><div class="trait-fill" style="width:82%"></div></div></div>
+      <div class="trait-row"><div class="trait-header"><span>感性 vs 理性</span><span class="trait-pct">67%</span></div><div class="trait-bg"><div class="trait-fill" style="width:67%"></div></div></div>
+      <div class="trait-row"><div class="trait-header"><span>计划 vs 随性</span><span class="trait-pct">71%</span></div><div class="trait-bg"><div class="trait-fill" style="width:71%"></div></div></div>
+      <div class="trait-row"><div class="trait-header"><span>内向 vs 外向</span><span class="trait-pct">38%</span></div><div class="trait-bg"><div class="trait-fill" style="width:38%"></div></div></div>
+    </div>
+    <div class="section-card section-last">
+      <div class="section-title">最适合你的人</div>
+      <div class="match-item"><svg class="match-icon" viewBox="0 0 24 24" fill="none" stroke="#00B894" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>有自己独立思想，不随波逐流</div>
+      <div class="match-item"><svg class="match-icon" viewBox="0 0 24 24" fill="none" stroke="#00B894" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>能接受沉默，不觉得尴尬</div>
+      <div class="match-item"><svg class="match-icon" viewBox="0 0 24 24" fill="none" stroke="#00B894" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>对某个领域有深度热情</div>
+      <div class="match-item"><svg class="match-icon" viewBox="0 0 24 24" fill="none" stroke="#E55353" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>社交牛人但缺乏深度</div>
+    </div>
+    <div class="cta-wrap" style="padding-bottom:16px">
+      <button class="btn-green">开始匹配同频好友</button>
+    </div>
+  </div>
+  <div class="tab-bar">
+    <div class="tab-item"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><span>发现</span></div>
+    <div class="tab-item"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg><span>匹配</span></div>
+    <div class="tab-item active"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6C5CE7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg><span>灵魂</span></div>
+    <div class="tab-item"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><span>消息</span></div>
+    <div class="tab-item"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>我的</span></div>
+  </div>
+</div>
+<!-- EDIT MODE -->
+<div id="edit-mode" style="display:none;flex-direction:column;height:844px;">
+  <div class="status-bar white">
+    <span class="status-time-w">9:41</span>
+    <div class="status-icons-w">
+      <svg width="17" height="12" viewBox="0 0 17 12" fill="none"><rect x="0" y="3" width="3" height="9" rx="1" fill="#000"/><rect x="4.5" y="2" width="3" height="10" rx="1" fill="#000"/><rect x="9" y="0" width="3" height="12" rx="1" fill="#000"/><rect x="13.5" y="0" width="3" height="12" rx="1" fill="#000" opacity=".3"/></svg>
+      <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 2.4C10.4 2.4 12.6 3.4 14.1 5L15.5 3.5C13.6 1.4 11 0 8 0 5 0 2.4 1.4.5 3.5L1.9 5C3.4 3.4 5.6 2.4 8 2.4Z" fill="#000"/><path d="M8 5.6C9.6 5.6 11 6.2 12.1 7.2L13.5 5.8C12 4.4 10.1 3.6 8 3.6 5.9 3.6 4 4.4 2.5 5.8L3.9 7.2C5 6.2 6.4 5.6 8 5.6Z" fill="#000"/><circle cx="8" cy="10" r="2" fill="#000"/></svg>
+      <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x=".5" y=".5" width="21" height="11" rx="3.5" stroke="#000" stroke-opacity=".35"/><rect x="2" y="2" width="16" height="8" rx="2" fill="#000"/><path d="M23 4.5V7.5C23.8 7.2 24.5 6.5 24.5 6 24.5 5.5 23.8 4.8 23 4.5Z" fill="#000" opacity=".4"/></svg>
+    </div>
+  </div>
+  <div class="nav-edit">
+    <span class="nav-cancel" onclick="switchToView()">取消</span>
+    <span class="nav-edit-title">编辑资料</span>
+    <span class="nav-save" onclick="switchToView()">保存</span>
+  </div>
+  <div class="scroll-content">
+
+    <!-- 1. 基础资料 -->
+    <div class="edit-section">
+      <div class="edit-section-title">基础资料</div>
+      <div class="avatar-edit-row"><div class="avatar-edit">陈<div class="avatar-cam"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6C5CE7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></div></div></div>
+      <div class="avatar-hint">点击更换头像</div>
+      <div class="form-row"><div class="form-label">昵称</div><input class="form-input" value="陈晓雨"></div>
+      <div class="form-row-2col">
+        <div class="form-row"><div class="form-label">年龄</div><input class="form-input" value="23"></div>
+        <div class="form-row"><div class="form-label">城市</div><input class="form-input" value="上海"></div>
+      </div>
+      <div class="form-row"><div class="form-label">职业 / 年级</div><input class="form-input" value="产品设计师"></div>
+      <div class="form-row" style="margin-bottom:0"><div class="form-label">一句话介绍</div><textarea class="form-textarea">相信每个人心里都有一个不轻易示人的世界，在找能懂这个世界的人。</textarea></div>
+    </div>
+
+    <!-- 2. 兴趣标签 -->
+    <div class="edit-section">
+      <div class="edit-section-title">兴趣与性格</div>
+      <div class="form-label" style="margin-bottom:10px">选择你的兴趣标签（多选）</div>
+      <div class="tags-grid">
+        <span class="tag-chip selected">哲学</span><span class="tag-chip selected">独立电影</span><span class="tag-chip selected">写作</span><span class="tag-chip">冥想</span><span class="tag-chip">跑步</span><span class="tag-chip selected">读书</span><span class="tag-chip">音乐</span><span class="tag-chip">旅行</span><span class="tag-chip">摄影</span><span class="tag-chip">极简主义</span><span class="tag-chip">咖啡</span><span class="tag-chip">素食</span>
+        <span class="tag-add">+ 自定义</span>
+      </div>
+      <div class="form-label" style="margin:14px 0 10px">MBTI 人格类型</div>
+      <div class="mbti-row">
+        <span class="mbti-chip selected">INFJ</span><span class="mbti-chip">INFP</span><span class="mbti-chip">INTJ</span><span class="mbti-chip">INTP</span><span class="mbti-chip">ENFJ</span><span class="mbti-chip">ENFP</span><span class="mbti-chip">ENTJ</span><span class="mbti-chip">ENTP</span>
+      </div>
+      <div class="form-label" style="margin:14px 0 6px">相处偏好</div>
+      <div class="form-row" style="margin-bottom:0"><input class="form-input" placeholder="例如：喜欢慢节奏相处，不喜欢催促..."></div>
+    </div>
+    <!-- 3. 内容导入 -->
+    <div class="edit-section" style="margin-bottom:12px">
+      <div class="edit-section-title">内容导入 · 训练你的AI分身</div>
+      <div style="font-size:13px;color:#8E8E93;margin-bottom:14px;line-height:1.5">导入越多，AI分身越像你。所有导入方式均可随时撤销。</div>
+
+      <div class="import-item">
+        <div class="import-icon" style="background:#FFF0F0">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#E55353" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        </div>
+        <div class="import-info">
+          <div class="import-name">上传社交截图 <span class="import-badge badge-hot">最受欢迎</span></div>
+          <div class="import-desc">上传朋友圈/QQ空间截图，AI读取你的表达风格</div>
+        </div>
+        <div class="import-toggle on"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+      </div>
+
+      <div class="import-item">
+        <div class="import-icon" style="background:#FFF4E6">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F39C12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2H3v16h5l3 3 3-3h7z"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="12" x2="13" y2="12"/></svg>
+        </div>
+        <div class="import-info">
+          <div class="import-name">关联公开社交账号 <span class="import-badge badge-safe">仅读公开内容</span></div>
+          <div class="import-desc">小红书/微博/抖音，AI分析你发布的帖子和喜好</div>
+        </div>
+        <div class="import-toggle on"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+      </div>
+
+      <div class="import-item">
+        <div class="import-icon" style="background:#F0EDFF">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6C5CE7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        <div class="import-info">
+          <div class="import-name">上传文字语料 <span class="import-badge badge-new">效果极佳</span></div>
+          <div class="import-desc">日记、随笔、心情文字，最能还原你的真实表达</div>
+        </div>
+        <div class="import-toggle"></div>
+      </div>
+
+      <div class="import-item">
+        <div class="import-icon" style="background:#F0FFF8">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00B894" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        </div>
+        <div class="import-info">
+          <div class="import-name">关联音乐/读书软件</div>
+          <div class="import-desc">网易云歌单/微信读书书单，了解你的审美与偏好</div>
+        </div>
+        <div class="import-toggle"></div>
+      </div>
+
+      <div class="import-item">
+        <div class="import-icon" style="background:#E8F4FF">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3498DB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </div>
+        <div class="import-info">
+          <div class="import-name">语音短回答</div>
+          <div class="import-desc">说几句话，AI学习你的表达节奏和情绪风格</div>
+        </div>
+        <div class="import-toggle"></div>
+      </div>
+
+      <div class="privacy-note">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F9CA24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span>不会读取私信/通讯录/位置。所有数据仅用于训练你的专属AI分身，不对外共享。</span>
+      </div>
+    </div>
+
+  </div>
+  <div class="tab-bar">
+    <div class="tab-item"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><span>发现</span></div>
+    <div class="tab-item"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg><span>匹配</span></div>
+    <div class="tab-item active"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6C5CE7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg><span>灵魂</span></div>
+    <div class="tab-item"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><span>消息</span></div>
+    <div class="tab-item"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>我的</span></div>
+  </div>
+</div>
+
+<script>
+function switchToEdit() {
+  document.getElementById('view-mode').style.display = 'none';
+  document.getElementById('edit-mode').style.display = 'flex';
+}
+function switchToView() {
+  document.getElementById('edit-mode').style.display = 'none';
+  document.getElementById('view-mode').style.display = 'block';
+}
+document.querySelectorAll('.tag-chip').forEach(c => {
+  c.addEventListener('click', () => c.classList.toggle('selected'));
+});
+document.querySelectorAll('.mbti-chip').forEach(c => {
+  c.addEventListener('click', () => {
+    document.querySelectorAll('.mbti-chip').forEach(x => x.classList.remove('selected'));
+    c.classList.add('selected');
+  });
+});
+document.querySelectorAll('.import-toggle').forEach(t => {
+  t.addEventListener('click', () => t.classList.toggle('on'));
+});
+</script>
+</body>
+</html>
+
+
+
