@@ -1,50 +1,93 @@
 import os from 'os';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
+import fs from 'fs';
 
 export type ResourceMetrics = {
-  cpuUsage: number;      // CPU 使用率 (0-100)
-  memoryUsage: number;   // 内存使用率 (0-100)
-  memoryUsedMB: number;  // 已使用内存 MB
-  memoryTotalMB: number; // 总内存 MB
+  cpuUsage: number;
+  memoryUsage: number;
+  memoryUsedMB: number;
+  memoryTotalMB: number;
   timestamp: number;
 };
 
 export type ResourceThresholds = {
-  cpuWarning: number;    // CPU 警告阈值
-  cpuCritical: number;   // CPU 危险阈值
-  memoryWarning: number; // 内存警告阈值
-  memoryKill: number;    // 内存强制停止阈值
+  cpuWarning: number;
+  cpuCritical: number;
+  memoryWarning: number;
+  memoryKill: number;
 };
 
 const DEFAULT_THRESHOLDS: ResourceThresholds = {
-  cpuWarning: 80,      // CPU 超过 80% 警告
-  cpuCritical: 99,     // CPU 超过 99% 才拒绝新请求（Playwright 截图本身就会拉高 CPU）
-  memoryWarning: 75,   // 内存超过 75% 警告
-  memoryKill: 90,      // 内存超过 90% 强制停止
+  cpuWarning: 80,
+  cpuCritical: 95,
+  memoryWarning: 75,
+  memoryKill: 90,
 };
+
+/** Linux: 用 /proc/stat 计算 CPU，无 shell、无子进程，适合小内存机器 */
+let lastCpuTotals: { idle: number; total: number } | null = null;
+
+function readCpuPercentLinux(): number {
+  try {
+    const line = fs.readFileSync('/proc/stat', 'utf8').split('\n')[0];
+    if (!line.startsWith('cpu ')) return 0;
+    const nums = line
+      .trim()
+      .split(/\s+/)
+      .slice(1)
+      .map((x) => parseInt(x, 10));
+    const idle = nums[3];
+    const total = nums.reduce((a, b) => a + b, 0);
+    if (lastCpuTotals === null) {
+      lastCpuTotals = { idle, total };
+      return 0;
+    }
+    const idleDelta = idle - lastCpuTotals.idle;
+    const totalDelta = total - lastCpuTotals.total;
+    lastCpuTotals = { idle, total };
+    if (totalDelta <= 0) return 0;
+    return Math.max(0, Math.min(100, 100 * (1 - idleDelta / totalDelta)));
+  } catch {
+    return 0;
+  }
+}
+
+function readCpuPercentFallback(): number {
+  const cpus = os.cpus();
+  let totalIdle = 0;
+  let totalTick = 0;
+  for (const cpu of cpus) {
+    for (const type in cpu.times) {
+      totalTick += cpu.times[type as keyof typeof cpu.times];
+    }
+    totalIdle += cpu.times.idle;
+  }
+  if (totalTick <= 0) return 0;
+  return Math.max(0, Math.min(100, (1 - totalIdle / totalTick) * 100));
+}
+
+function readCpuPercent(): number {
+  if (process.platform === 'linux') return readCpuPercentLinux();
+  return readCpuPercentFallback();
+}
 
 class ResourceMonitor {
   private thresholds: ResourceThresholds;
   private isShuttingDown = false;
   private lastMetrics: ResourceMetrics | null = null;
+  private degradedUntil = 0;
 
   constructor(thresholds: Partial<ResourceThresholds> = {}) {
     this.thresholds = { ...DEFAULT_THRESHOLDS, ...thresholds };
   }
 
   /**
-   * 获取当前资源使用情况
+   * 同步、低开销：不 exec 外部命令，避免小内存机器上频繁 fork 导致 OOM。
    */
-  async getMetrics(): Promise<ResourceMetrics> {
+  getMetrics(): ResourceMetrics {
     const totalMem = os.totalmem();
     const freeMem = os.freemem();
     const usedMem = totalMem - freeMem;
-
-    // 获取 CPU 使用率（通过 /proc/stat 或 os.cpus()）
-    const cpuUsage = await this.getCpuUsage();
+    const cpuUsage = readCpuPercent();
 
     const metrics: ResourceMetrics = {
       cpuUsage,
@@ -53,63 +96,24 @@ class ResourceMonitor {
       memoryTotalMB: Math.round(totalMem / 1024 / 1024),
       timestamp: Date.now(),
     };
-
     this.lastMetrics = metrics;
     return metrics;
   }
 
-  /**
-   * 获取 CPU 使用率
-   */
-  private async getCpuUsage(): Promise<number> {
-    try {
-      // Linux: 使用 top 命令获取 CPU 使用率
-      if (process.platform === 'linux') {
-        const { stdout } = await execAsync(
-          "top -bn1 | grep 'Cpu(s)' | sed 's/.*, *\\([0-9.]*\\)%* id.*/\\1/' | awk '{print 100 - $1}'"
-        );
-        return parseFloat(stdout.trim()) || 0;
-      }
-
-      // macOS: 使用 ps 命令
-      if (process.platform === 'darwin') {
-        const { stdout } = await execAsync(
-          "ps -A -o %cpu | awk '{s+=$1} END {print s}'"
-        );
-        return parseFloat(stdout.trim()) || 0;
-      }
-
-      // 其他平台：使用 Node.js 内置方法（不太准确）
-      const cpus = os.cpus();
-      let totalIdle = 0;
-      let totalTick = 0;
-
-      cpus.forEach((cpu) => {
-        for (const type in cpu.times) {
-          totalTick += cpu.times[type as keyof typeof cpu.times];
-        }
-        totalIdle += cpu.times.idle;
-      });
-
-      return ((1 - totalIdle / totalTick) * 100) || 0;
-    } catch (error) {
-      console.error('[ResourceMonitor] 获取 CPU 使用率失败:', error);
-      return 0;
-    }
+  /** 仅内存比例，供后台定时器快速判断，不做 CPU 计算 */
+  getMemoryUsagePercent(): number {
+    const totalMem = os.totalmem();
+    return ((totalMem - os.freemem()) / totalMem) * 100;
   }
 
-  /**
-   * 检查资源是否超过阈值
-   */
   async check(): Promise<{
     safe: boolean;
     level: 'ok' | 'warning' | 'critical' | 'kill';
     message: string;
     metrics: ResourceMetrics;
   }> {
-    const metrics = await this.getMetrics();
+    const metrics = this.getMetrics();
 
-    // 内存超过 kill 阈值：立即停止
     if (metrics.memoryUsage >= this.thresholds.memoryKill) {
       return {
         safe: false,
@@ -119,7 +123,6 @@ class ResourceMonitor {
       };
     }
 
-    // CPU 超过 critical 阈值：拒绝新请求
     if (metrics.cpuUsage >= this.thresholds.cpuCritical) {
       return {
         safe: false,
@@ -129,7 +132,6 @@ class ResourceMonitor {
       };
     }
 
-    // 内存超过 warning 阈值：警告
     if (metrics.memoryUsage >= this.thresholds.memoryWarning) {
       return {
         safe: true,
@@ -139,7 +141,6 @@ class ResourceMonitor {
       };
     }
 
-    // CPU 超过 warning 阈值：警告
     if (metrics.cpuUsage >= this.thresholds.cpuWarning) {
       return {
         safe: true,
@@ -157,26 +158,26 @@ class ResourceMonitor {
     };
   }
 
-  /**
-   * 触发紧急停止
-   */
   async emergencyShutdown(reason: string) {
-    if (this.isShuttingDown) return;
+    const now = Date.now();
+    if (this.isShuttingDown && now < this.degradedUntil) return;
     this.isShuttingDown = true;
+    this.degradedUntil = now + 30_000;
 
     console.error('='.repeat(80));
-    console.error('[ResourceMonitor] 🚨 紧急停止服务');
+    console.error('[ResourceMonitor] 🚨 进入降级保护');
     console.error('[ResourceMonitor] 原因:', reason);
     if (this.lastMetrics) {
       console.error('[ResourceMonitor] CPU:', this.lastMetrics.cpuUsage.toFixed(1) + '%');
-      console.error('[ResourceMonitor] 内存:', this.lastMetrics.memoryUsage.toFixed(1) + '%',
-        `(${this.lastMetrics.memoryUsedMB}MB / ${this.lastMetrics.memoryTotalMB}MB)`);
+      console.error(
+        '[ResourceMonitor] 内存:',
+        this.lastMetrics.memoryUsage.toFixed(1) + '%',
+        `(${this.lastMetrics.memoryUsedMB}MB / ${this.lastMetrics.memoryTotalMB}MB)`,
+      );
     }
     console.error('='.repeat(80));
 
-    // 清理浏览器实例（动态导入避免 middleware 加载 playwright）
     try {
-      // 只在 Node.js 环境且非 Edge Runtime 中导入
       if (typeof window === 'undefined' && !process.env.NEXT_RUNTIME) {
         const { browserPool } = await import('@/lib/browserPool');
         await browserPool.forceClose();
@@ -186,10 +187,9 @@ class ResourceMonitor {
       console.error('[ResourceMonitor] 关闭浏览器失败:', error);
     }
 
-    // 延迟退出，给日志时间写入
     setTimeout(() => {
-      process.exit(1);
-    }, 1000);
+      this.isShuttingDown = false;
+    }, 30_000);
   }
 
   getLastMetrics(): ResourceMetrics | null {
@@ -201,43 +201,45 @@ class ResourceMonitor {
   }
 }
 
-// 全局单例
 export const resourceMonitor = new ResourceMonitor({
-  cpuWarning: parseInt(process.env.CPU_WARNING_THRESHOLD || '80'),
-  cpuCritical: parseInt(process.env.CPU_CRITICAL_THRESHOLD || '95'),
-  memoryWarning: parseInt(process.env.MEMORY_WARNING_THRESHOLD || '75'),
-  memoryKill: parseInt(process.env.MEMORY_KILL_THRESHOLD || '90'),
+  cpuWarning: parseInt(process.env.CPU_WARNING_THRESHOLD || '80', 10),
+  cpuCritical: parseInt(process.env.CPU_CRITICAL_THRESHOLD || '95', 10),
+  memoryWarning: parseInt(process.env.MEMORY_WARNING_THRESHOLD || '75', 10),
+  memoryKill: parseInt(process.env.MEMORY_KILL_THRESHOLD || '90', 10),
 });
 
-// 定期监控（每 10 秒）
 let monitorInterval: NodeJS.Timeout | null = null;
 
+/**
+ * 后台仅做「内存阈值」巡检：不跑 CPU、不 exec，间隔默认 60s，减轻小内存 VPS 压力。
+ */
 export function startResourceMonitoring() {
   if (monitorInterval) return;
 
-  console.log('[ResourceMonitor] 启动资源监控');
-  console.log('[ResourceMonitor] 阈值配置:', {
-    cpuWarning: resourceMonitor['thresholds'].cpuWarning + '%',
-    cpuCritical: resourceMonitor['thresholds'].cpuCritical + '%',
-    memoryWarning: resourceMonitor['thresholds'].memoryWarning + '%',
-    memoryKill: resourceMonitor['thresholds'].memoryKill + '%',
-  });
+  const intervalMs = Math.max(
+    15_000,
+    parseInt(process.env.RESOURCE_MONITOR_INTERVAL_MS || '120000', 10),
+  );
 
-  monitorInterval = setInterval(async () => {
+  if (process.env.RESOURCE_MONITOR_ENABLED === '0') {
+    return;
+  }
+
+  console.log('[ResourceMonitor] 轻量监控已启动（仅内存 / ' + intervalMs + 'ms）');
+
+  monitorInterval = setInterval(() => {
     try {
-      const result = await resourceMonitor.check();
-
-      if (result.level === 'kill') {
-        await resourceMonitor.emergencyShutdown(result.message);
-      } else if (result.level === 'critical') {
-        console.warn('[ResourceMonitor] ⚠️ ', result.message);
-      } else if (result.level === 'warning') {
-        console.warn('[ResourceMonitor] ⚠️ ', result.message);
+      const memPct = resourceMonitor.getMemoryUsagePercent();
+      const killThreshold = parseInt(process.env.MEMORY_KILL_THRESHOLD || '90', 10);
+      if (memPct >= killThreshold) {
+        void resourceMonitor.emergencyShutdown(
+          `内存使用率 ${memPct.toFixed(1)}% 超过危险阈值 ${killThreshold}%`,
+        );
       }
     } catch (error) {
       console.error('[ResourceMonitor] 监控检查失败:', error);
     }
-  }, 10000); // 每 10 秒检查一次
+  }, intervalMs);
 }
 
 export function stopResourceMonitoring() {
@@ -248,7 +250,6 @@ export function stopResourceMonitoring() {
   }
 }
 
-// 进程退出时清理
 if (typeof process !== 'undefined') {
   process.on('beforeExit', () => {
     stopResourceMonitoring();

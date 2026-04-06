@@ -21,6 +21,23 @@ export type SoulReport = {
   article?: SoulReportArticle;
 };
 
+/** vision 批次里的 key 为平台英文 key（如 xhs），block.source 多为「小红书·…」— 需双向匹配 */
+const VISION_KEY_TO_LABEL: Record<string, string> = {
+  xhs: '小红书',
+  weibo: '微博',
+  douyin: '抖音',
+  netease: '网易云',
+  douban: '豆瓣',
+  zhihu: '知乎',
+};
+
+function visionKeyMatchesBlock(key: string, blockSource: string): boolean {
+  const k = key.toLowerCase();
+  if (blockSource.toLowerCase().includes(k)) return true;
+  const label = VISION_KEY_TO_LABEL[k];
+  return label ? blockSource.includes(label) : false;
+}
+
 function blockIcon(platform: string): string {
   if (platform === 'netease' || platform === 'douyin') return '🎵';
   if (platform === 'douban') return '🎬';
@@ -110,6 +127,47 @@ export function ensureBlocksCoverAllScrapes(
   return { ...report, blocks };
 }
 
+/** 模型仍可能把某平台写成「抓取失败」等，但抓取 excerpt 实际有正文：用摘录覆盖对应 block（尤其小红书）。 */
+const SCRAPE_FAILURE_IN_DESCRIPTION =
+  /未连接|抓取失败|数据不可用|无法获取|无法连接|服务器|页面未连接|未能获取有效|当前环境下未返回/i;
+
+function blockMatchesScrape(
+  b: SoulReport['blocks'][number],
+  o: ScrapeOutcome,
+  label: string,
+): boolean {
+  return (
+    b.source.includes(label) ||
+    b.source.includes(o.platform) ||
+    (o.platform === 'netease' && b.source.includes('网易'))
+  );
+}
+
+export function applyScrapeEvidenceToBlocks(report: SoulReport, scrapes: ScrapeOutcome[]): SoulReport {
+  if (!scrapes.length) return report;
+  const blocks = report.blocks.map((b) => {
+    for (const o of scrapes) {
+      if (!o.ok) continue;
+      const excerpt = (o.excerpt || '').trim();
+      if (excerpt.length < 40) continue;
+      const label = scrapeOutcomeToDisplayName(o);
+      if (!blockMatchesScrape(b, o, label)) continue;
+      const forceFromScrape =
+        o.platform === 'xhs' || SCRAPE_FAILURE_IN_DESCRIPTION.test(b.description);
+      if (!forceFromScrape) continue;
+      return {
+        ...b,
+        source: `${label}·公开页摘录`,
+        title: o.platform === 'xhs' ? '抓取的可见文本（节选）' : b.title,
+        description: excerpt.length > 2000 ? `${excerpt.slice(0, 2000)}…` : excerpt,
+        tags: b.tags?.length ? b.tags : ['平台摘录'],
+      };
+    }
+    return b;
+  });
+  return { ...report, blocks };
+}
+
 /** 用户步骤一上传的截图：模型漏写时补一条 */
 export function ensureUserHandUploadBlock(report: SoulReport, userUploadCount: number): SoulReport {
   if (userUploadCount <= 0) return report;
@@ -137,6 +195,7 @@ async function callOpenAI(
   messages: Array<{ role: string; content: unknown }>,
   maxTokens: number,
   timeoutMs = 90_000,
+  temperature = 0.65,
 ): Promise<string | null> {
   let res: Response;
   try {
@@ -149,7 +208,7 @@ async function callOpenAI(
       },
       body: JSON.stringify({
         model,
-        temperature: 0.78,
+        temperature,
         max_tokens: maxTokens,
         response_format: { type: 'json_object' },
         messages,
@@ -180,6 +239,107 @@ async function callOpenAI(
   const raw = choice?.message?.content ?? null;
   console.log(`[OpenAI] finish_reason=${choice?.finish_reason}, rawLen=${raw?.length ?? 0}`);
   return raw;
+}
+
+function hasEvidenceSignal(text: string): boolean {
+  const t = text || '';
+  return (
+    /[0-9]{2,}/.test(t) ||
+    /昵称|简介|粉丝|关注|点赞|评论|歌单|回答|动态|截图|自述|发布|收藏/.test(t) ||
+    /「|」|【|】|“|”/.test(t)
+  );
+}
+
+function isLikelyGenericText(text: string): boolean {
+  return /善于社交|热爱生活|积极向上|情感细腻|富有创意|开朗乐观|阳光正能量/.test(text || '');
+}
+
+function assessReportQuality(report: SoulReport, scrapes: ScrapeOutcome[]): { ok: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  const blocks = Array.isArray(report.blocks) ? report.blocks : [];
+  const overall = String(report.overall ?? '');
+
+  if (!report.mbti || String(report.mbti).trim().length < 4) {
+    reasons.push('mbti 字段缺失或过短');
+  }
+  if (overall.replace(/\s+/g, '').length < 160) {
+    reasons.push('overall 过短');
+  }
+  if (isLikelyGenericText(overall)) {
+    reasons.push('overall 存在空泛套语');
+  }
+  if (blocks.length < Math.max(3, scrapes.length)) {
+    reasons.push('blocks 条数偏少，平台覆盖不足');
+  }
+
+  const evidenceBlocks = blocks.filter((b) => hasEvidenceSignal(String(b.description ?? '')));
+  if (blocks.length > 0 && evidenceBlocks.length / blocks.length < 0.6) {
+    reasons.push('blocks 证据密度偏低');
+  }
+
+  for (const s of scrapes) {
+    const label = scrapeOutcomeToDisplayName(s);
+    const hit = blocks.some((b) => `${b.source} ${b.title}`.includes(label));
+    if (!hit) reasons.push(`缺少平台段落：${label}`);
+  }
+
+  const article = report.article;
+  if (!isCompleteSoulReportArticle(article)) {
+    reasons.push('article 结构不完整');
+  } else {
+    const pillarCount = article.section1?.corePersonality?.pillars?.length ?? 0;
+    if (pillarCount < 2) reasons.push('corePersonality 柱数量不足');
+
+    const bulletCount = article.section1.corePersonality.pillars
+      .reduce((n, p) => n + (Array.isArray(p.bullets) ? p.bullets.length : 0), 0);
+    if (bulletCount < 4) reasons.push('corePersonality bullets 过少');
+
+    const shortEvidence = article.section2.celebrities.filter((c) => (c.evidence || '').length < 90);
+    if (shortEvidence.length > 0) reasons.push('名人 evidence 偏短');
+
+    const shortTimeline = article.section3.timeline.filter((x) => (x.paragraph || '').length < 60);
+    if (shortTimeline.length > 2) reasons.push('timeline 细节密度不足');
+  }
+
+  return { ok: reasons.length === 0, reasons };
+}
+
+async function tryRepairLowQualityReport(params: {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  context: string;
+  report: SoulReport;
+  reasons: string[];
+}): Promise<SoulReport | null> {
+  const { apiKey, baseUrl, model, context, report, reasons } = params;
+  const fixPrompt =
+    [
+      context.slice(0, 20000),
+      '',
+      '【你的上一版输出存在质量问题，必须完全重写并修复】',
+      `不达标项：${reasons.map((r, i) => `${i + 1}. ${r}`).join('；')}`,
+      '硬约束：必须写成高密度“实锤特稿”；每个关键结论都绑定可见细节（平台名、数字、原词、具体行为）；禁止空话套话。',
+      '禁止虚构平台内容；若某平台材料薄弱，明确写“材料不足”，但不得用泛词填充。',
+      '',
+      '【上一版 JSON（仅供你发现问题，不可复读）】',
+      JSON.stringify(report).slice(0, 22000),
+    ].join('\n');
+
+  const messages = [
+    { role: 'system', content: getSoulReportSystemPrompt() },
+    { role: 'user', content: fixPrompt },
+  ];
+  const raw = await callOpenAI(apiKey, baseUrl, model, messages, 14000, 100_000, 0.45);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as SoulReport;
+    if (!parsed.blocks || !Array.isArray(parsed.blocks)) return null;
+    return parsed;
+  } catch (e) {
+    console.error('[OpenAI] 质量修复 JSON 解析失败:', e instanceof Error ? e.message : String(e));
+    return null;
+  }
 }
 
 /**
@@ -245,6 +405,7 @@ export async function tryOpenAISoulReport(
   screenshotDataUrls: string[] = [],
   /** 平台 key 列表，与 screenshotDataUrls 顺序对应（platformShotKeys[i] ↔ screenshotDataUrls[i]） */
   platformShotKeys: string[] = [],
+  scrapes: ScrapeOutcome[] = [],
 ): Promise<SoulReport | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
@@ -267,6 +428,7 @@ export async function tryOpenAISoulReport(
     '⑨ 每条 bullet 须有「材料支撑句」+ 「人格解读句」双层结构，例如：「你在小红书开帖用自己的邮箱替陌生人答疑（材料）→ 这是把「帮到别人」当成价值感来源的典型 ISFJ 底色（解读）」；\n',
     '⑩ 整体语气接近非虚构特稿：有冲击力、有画面感、允许口语化短句，但绝不脱离材料脑补；\n',
     '⑪ 若某平台材料极少，诚实说明「该平台仅有昵称/签名，无法深挖」，不以万能话填充。\n',
+    '⑫ 若上文【小红书】等平台「正文摘录」非空，对应 block 必须基于摘录撰写，禁止写「抓取失败」「未连接服务器」「无法连接」等；仅摘录为空时才可说明不可用。\n',
     '\n以上任一不达标须在同一回复中补足，不得缩减。',
   ].join('');
 
@@ -294,6 +456,22 @@ export async function tryOpenAISoulReport(
     return null;
   }
 
+  const quality = assessReportQuality(report, scrapes);
+  if (!quality.ok) {
+    console.warn('[OpenAI] 首轮报告质量未达标，尝试自动修复:', quality.reasons.join(' | '));
+    const repaired = await tryRepairLowQualityReport({
+      apiKey,
+      baseUrl,
+      model,
+      context,
+      report,
+      reasons: quality.reasons,
+    });
+    if (repaired) {
+      report = repaired;
+    }
+  }
+
   // ── 第二轮：视觉增强（如有截图，全部传入，分批 low-detail 处理）──────────
   if (screenshotDataUrls.length > 0) {
     const keys = platformShotKeys.length === screenshotDataUrls.length
@@ -309,14 +487,18 @@ export async function tryOpenAISoulReport(
         ...report,
         blocks: report.blocks.map((block) => {
           for (const [key, vDesc] of visionMap.entries()) {
-            if (block.source.toLowerCase().includes(key.toLowerCase())) {
-              // 若视觉描述明确指出是验证码/无效页面，保留原 description
-              if (/验证码|无效页面|404|空白/.test(vDesc)) {
+            if (visionKeyMatchesBlock(key, block.source)) {
+              // 验证码 / 404 / 网络错误 / 截图不可用：保留第一轮基于「正文摘录」的 description，避免把好摘录换成「未连接服务器」
+              if (
+                /验证码|无效页面|404|空白|未连接到|网络连接失败|请检查网络|网络异常|连接失败|无法连接|非有效主页/i.test(
+                  vDesc,
+                )
+              ) {
                 return block;
               }
               return {
                 ...block,
-                description: vDesc,   // 直接用视觉解读替换，更基于真实可见内容
+                description: vDesc,
               };
             }
           }

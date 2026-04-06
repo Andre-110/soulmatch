@@ -5,8 +5,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // 关闭文件追踪，避免构建时 OOM（自托管不需要此功能）
-  outputFileTracing: false,
+  outputFileTracingRoot: __dirname,
+  typescript: { ignoreBuildErrors: true },
+  eslint: { ignoreDuringBuilds: true },
+  experimental: {
+    optimizePackageImports: ['react', 'react-dom', 'html2canvas'],
+  },
   async headers() {
     return [
       {

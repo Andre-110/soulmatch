@@ -1,8 +1,12 @@
 import { ChunkLoadRecovery } from '@/components/ChunkLoadRecovery';
 import { startResourceMonitoring } from '@/lib/resourceMonitor';
 
-// 启动资源监控（仅在服务器端）
-if (typeof window === 'undefined') {
+// 启动资源监控（仅在运行中的 Node 服务；build 阶段 worker 不启，避免多进程重复定时器）
+if (
+  typeof window === 'undefined' &&
+  process.env.RESOURCE_MONITOR_ENABLED !== '0' &&
+  process.env.NEXT_PHASE !== 'phase-production-build'
+) {
   startResourceMonitoring();
 }
 

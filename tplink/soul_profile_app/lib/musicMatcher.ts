@@ -2,6 +2,7 @@
  * 音乐匹配系统
  * 根据用户的 MBTI 类型，匹配对应的专属背景音乐
  */
+import { parsePrimaryMbtiCode } from '@/lib/mbtiIpIndex';
 
 export type MusicTrack = {
   id: string;
@@ -131,12 +132,7 @@ export const MBTI_MUSIC_LIBRARY: Record<string, MusicTrack> = {
  * 获取推荐音乐
  */
 export function getRecommendedMusic(mbti?: string): MusicTrack {
-  if (!mbti) {
-    // 默认返回 INFP
-    return MBTI_MUSIC_LIBRARY.INFP;
-  }
-
-  const type = mbti.toUpperCase().trim();
+  const type = parsePrimaryMbtiCode(mbti) ?? '';
   const track = MBTI_MUSIC_LIBRARY[type];
 
   // 如果找不到对应的 MBTI 类型，返回默认

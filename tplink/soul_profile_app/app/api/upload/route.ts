@@ -2,8 +2,15 @@ import { NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import { cookies } from 'next/headers';
 import prisma from '@/lib/prisma';
-import { mkdir, writeFile } from 'fs/promises';
+import { mkdir, unlink, writeFile } from 'fs/promises';
 import { join } from 'path';
+
+function resolveUploadFilePath(url: string | null): string | null {
+  if (!url) return null;
+  const normalized = url.replace(/^\/+/, '');
+  if (!normalized.startsWith('uploads/')) return null;
+  return join(process.cwd(), 'public', normalized);
+}
 
 export async function POST(req: Request) {
   try {
@@ -61,5 +68,39 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: '保存失败' }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get('token')?.value;
+    if (!token) return NextResponse.json({ error: '未登录' }, { status: 401 });
+
+    const decoded = verifyToken(token) as any;
+    if (!decoded || !decoded.userId) return NextResponse.json({ error: '无效Token' }, { status: 401 });
+
+    const json = await req.json().catch(() => ({} as { uploadId?: string }));
+    const uploadId = typeof json.uploadId === 'string' ? json.uploadId : '';
+    if (!uploadId) return NextResponse.json({ error: '缺少 uploadId' }, { status: 400 });
+
+    const upload = await prisma.upload.findFirst({
+      where: { id: uploadId, userId: decoded.userId },
+    });
+    if (!upload) return NextResponse.json({ error: '图片不存在或无权限' }, { status: 404 });
+
+    await prisma.upload.delete({ where: { id: upload.id } });
+
+    const uploadFilePath = resolveUploadFilePath(upload.url);
+    if (uploadFilePath) {
+      await unlink(uploadFilePath).catch(() => {
+        // 文件已不存在时忽略，数据库记录已删除即可
+      });
+    }
+
+    return NextResponse.json({ success: true, uploadId: upload.id });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: '删除失败' }, { status: 500 });
   }
 }

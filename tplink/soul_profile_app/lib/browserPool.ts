@@ -7,7 +7,7 @@ import { resolveChromePath } from '@/lib/playwrightChrome';
 class BrowserPool {
   private browser: Browser | null = null;
   private lastUsed: number = 0;
-  private readonly IDLE_TIMEOUT = 300000; // 5 分钟无使用则关闭（批量截图需要更长时间）
+  private readonly IDLE_TIMEOUT = 180000; // 3 分钟无使用则关闭，减轻常驻内存
 
   async getBrowser(): Promise<Browser> {
     // 如果浏览器不存在或已断开，重新启动
@@ -22,6 +22,10 @@ class BrowserPool {
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
           '--disable-gpu',
+          '--disable-background-networking',
+          '--disable-default-apps',
+          '--disable-sync',
+          '--renderer-process-limit=2',
         ],
       });
     }
@@ -52,10 +56,10 @@ class BrowserPool {
 
 export const browserPool = new BrowserPool();
 
-// 定期清理空闲浏览器
+// 定期清理空闲浏览器（间隔拉长，减轻小内存机器上的定时器与 Playwright 压力）
 const cleanupInterval = setInterval(() => {
   browserPool.cleanup().catch(console.error);
-}, 30000); // 每 30 秒检查一次
+}, 180_000);
 
 // 进程退出时清理
 if (typeof process !== 'undefined') {

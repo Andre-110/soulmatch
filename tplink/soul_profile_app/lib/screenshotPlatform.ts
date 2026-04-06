@@ -8,8 +8,8 @@ import {
 } from '@/lib/browserExtensionCookies';
 import { CHROME_HEADLESS_BASE_ARGS, resolveChromePath } from '@/lib/playwrightChrome';
 
-const COOKIE_FILES: Record<PlatformKey, string> = {
-  xhs:     'cookies (6).json',
+/** 小红书不注入 Cookie；抖音等其它平台仍用 Cookie 文件 */
+const COOKIE_FILES: Partial<Record<PlatformKey, string>> = {
   weibo:   'cookies (7).json',
   douyin:  'cookies (20).json',
   netease: 'cookies (9).json',
@@ -19,8 +19,11 @@ const COOKIE_FILES: Record<PlatformKey, string> = {
 
 function loadCookies(platform: PlatformKey): BrowserExtensionCookie[] {
   try {
+    if (platform === 'xhs') return [];
     const file =
-      platform === 'douyin' ? findDouyinCookieFilePath() : findCookieFilePath(COOKIE_FILES[platform]);
+      platform === 'douyin'
+        ? findDouyinCookieFilePath()
+        : findCookieFilePath(COOKIE_FILES[platform] ?? '');
     if (!file) return [];
     return JSON.parse(fs.readFileSync(file, 'utf-8')) as BrowserExtensionCookie[];
   } catch {
@@ -45,7 +48,7 @@ export async function screenshotPlatformPage(
 ): Promise<ScreenshotResult> {
   const url = screenshotTargetUrl(platform, extractedId);
   const rawCookies = loadCookies(platform);
-  if (rawCookies.length === 0) {
+  if (rawCookies.length === 0 && platform !== 'xhs') {
     return { ok: false, error: `未找到 ${platform} 的 cookie 文件` };
   }
 
@@ -63,7 +66,9 @@ export async function screenshotPlatformPage(
       locale: 'zh-CN',
     });
 
-    await context.addCookies(extensionCookiesToPlaywright(rawCookies));
+    if (rawCookies.length > 0) {
+      await context.addCookies(extensionCookiesToPlaywright(rawCookies));
+    }
 
     const page = await context.newPage();
     await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });

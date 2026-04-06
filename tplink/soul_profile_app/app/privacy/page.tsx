@@ -1,3 +1,5 @@
+import { BackButton } from './BackButton';
+
 export const metadata = {
   title: '数据使用说明 · SoulMatch',
 };
@@ -29,7 +31,7 @@ export default function PrivacyPage() {
       fontFamily: '-apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-        <a href="/" style={{ color: 'rgba(255,255,255,0.6)', textDecoration: 'none', fontSize: '14px' }}>← 返回</a>
+        <BackButton />
       </div>
 
       <div style={{ maxWidth: '560px', margin: '0 auto', padding: '28px 20px 0' }}>

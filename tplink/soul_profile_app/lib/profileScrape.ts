@@ -2,7 +2,9 @@ import * as cheerio from 'cheerio';
 import type { PlatformKey } from '@/lib/platformUrls';
 import { getCookieHeader } from '@/lib/loadCookies';
 import { screenshotMultiplePlatforms, type ScreenshotTask } from '@/lib/screenshotPlatformBatch';
-import { xhsSearchUsersAndProfileInfo } from '@/lib/xhsSearchProfile';
+import { xhsOpenEntryUrlAndProfileExcerpt } from '@/lib/xhsSearchProfile';
+import { resolveXhsShareLinkToProfileUrl } from '@/lib/xhsResolveShareLink';
+import { isXhsShareLink } from '@/lib/platformUrls';
 import path from 'path';
 
 const UA =
@@ -269,50 +271,43 @@ export async function scrapeDouban(peopleId: string, profileUrl: string): Promis
   };
 }
 
-export async function scrapeXhs(keyword: string, profileUrl: string): Promise<ScrapeOutcome> {
-  // 使用新的搜索方法（通过浏览器自动化）
-  try {
-    const { findCookieFilePath } = await import('@/lib/cookieFilePaths');
-    const cookiePath = findCookieFilePath('cookies (6).json');
-    if (!cookiePath) {
-      logScrape('xhs', 'Cookie 文件未找到 (cookies (6).json)');
-      throw new Error('xhs cookie not found');
-    }
-    const result = await xhsSearchUsersAndProfileInfo({
-      cookiePath,
-      keyword,
-      openFirstProfile: true,
-      headless: true,
-    });
-
-    if (result.ok && result.profileExcerpt) {
-      // 从搜索结果里解析出真实 profile id（24 位 hex），供截图阶段使用正确的主页
-      let realProfileId: string | undefined;
-      if (result.profileUrl) {
-        const m = result.profileUrl.match(/\/user\/profile\/([a-f0-9]{24})/i);
-        if (m) realProfileId = m[1];
-      }
-      return {
-        platform: 'xhs',
-        url: result.profileUrl || profileUrl,
-        ok: true,
-        excerpt: clip(result.profileExcerpt),
-        method: 'xhs-browser-search',
-        screenshotId: realProfileId,
-      };
-    }
-  } catch (error) {
-    console.error('[XHS] 浏览器搜索失败:', error);
+export async function scrapeXhs(_keyword: string, profileUrl: string): Promise<ScrapeOutcome> {
+  if (!isXhsShareLink(profileUrl)) {
+    logScrape('xhs', '非 xhslink.com 短链，跳过（需用 App 分享链接）', { profileUrl: profileUrl.slice(0, 80) });
+    return { platform: 'xhs', url: profileUrl, ok: false, excerpt: '', method: 'invalid-xhs-url' };
   }
 
-  // 回退：标记为需要截图
-  return {
-    platform: 'xhs',
-    url: profileUrl,
-    ok: false,
-    excerpt: '',
-    method: 'pending-screenshot',
-  };
+  try {
+    // 1. HTTP 解析短链 → 带 xsec_token 的完整主页 URL
+    const resolvedProfilePageUrl = await resolveXhsShareLinkToProfileUrl(profileUrl);
+    const entryForBrowser = resolvedProfilePageUrl || profileUrl;
+    logScrape('xhs', '短链已解析', { resolved: (resolvedProfilePageUrl ?? '未解析到').slice(0, 100) });
+
+    // 2. 用 Playwright 打开主页，获取正文 + 截图（一次浏览器会话完成两件事）
+    const direct = await xhsOpenEntryUrlAndProfileExcerpt({
+      entryUrl: entryForBrowser,
+      headless: true,
+      captureScreenshot: true,   // 新增：同时截图
+    });
+
+    if (direct.ok && direct.profileExcerpt) {
+      logScrape('xhs', '抓取成功', { excerptLen: direct.profileExcerpt.length, hasScreenshot: !!direct.screenshotDataUrl });
+      return {
+        platform: 'xhs',
+        url: direct.profileUrl || profileUrl,
+        ok: true,
+        excerpt: clip(direct.profileExcerpt),
+        method: 'xhs-share-link',
+        screenshotDataUrl: direct.screenshotDataUrl,  // scrape 阶段已截图，batch 阶段会跳过
+        screenshotId: '__done__',                     // 告知 batch 无需重复截图
+      };
+    }
+    logScrape('xhs', '分享链直达未拿到足够正文', { err: direct.error });
+  } catch (error) {
+    console.error('[XHS] 分享链接直达失败:', error);
+  }
+
+  return { platform: 'xhs', url: profileUrl, ok: false, excerpt: '', method: 'xhs-share-failed' };
 }
 
 export async function scrapeDouyin(secUid: string, profileUrl: string): Promise<ScrapeOutcome> {
@@ -547,15 +542,20 @@ function shouldScreenshot(platform: PlatformKey, hasApiData: boolean): boolean {
 export async function scrapeFromPlatformUploads(uploads: UploadRow[]): Promise<ScrapeOutcome[]> {
   const results: ScrapeOutcome[] = [];
   const screenshotTasks: ScreenshotTask[] = [];
+  const latestPlatformPayloads = new Map<PlatformKey, { url: string; extractedId: string }>();
 
-  // 阶段 1：串行执行所有 API 抓取（不启动浏览器）
-  console.log('[Scrape] 开始 API 抓取阶段...');
   for (const row of uploads) {
     if (!row.content || !row.type.startsWith('platform:')) continue;
     const platform = row.type.slice('platform:'.length) as PlatformKey;
     const payload = parsePlatformPayload(row.content);
     if (!payload) continue;
+    // 相同平台只保留最后一次绑定，避免重复抓取/截图拖慢并放大资源占用
+    latestPlatformPayloads.set(platform, payload);
+  }
 
+  // 阶段 1：串行执行所有 API 抓取（不启动浏览器）
+  console.log('[Scrape] 开始 API 抓取阶段...');
+  for (const [platform, payload] of latestPlatformPayloads.entries()) {
     const { url, extractedId } = payload;
 
     let result: ScrapeOutcome | null = null;
@@ -586,16 +586,20 @@ export async function scrapeFromPlatformUploads(uploads: UploadRow[]): Promise<S
     if (result) {
       results.push(result);
 
+      // XHS 在 scrape 阶段已截图（screenshotId === '__done__'），不再加入 batch
+      const xhsDone = platform === 'xhs' && result.screenshotId === '__done__';
       const hasApiData = result.ok && result.excerpt.length > 100;
-      const willScreenshot = shouldScreenshot(platform, hasApiData);
-      // 优先用 API 阶段找到的真实用户 ID（如 xhs 搜索结果），否则用原始录入 ID
-      const shotId = result.screenshotId || extractedId;
+      const willScreenshot = !xhsDone && shouldScreenshot(platform, hasApiData);
+      const shotId = result.screenshotId && result.screenshotId !== '__done__'
+        ? result.screenshotId
+        : extractedId;
+
       logScrape(platform, 'API 阶段结束', {
         ok: result.ok,
         method: result.method,
         excerptLen: result.excerpt.length,
         willScreenshot,
-        shotId: shotId !== extractedId ? shotId : undefined,
+        xhsDone,
       });
       if (willScreenshot) {
         screenshotTasks.push({ platform, extractedId: shotId });
@@ -626,7 +630,6 @@ export async function scrapeFromPlatformUploads(uploads: UploadRow[]): Promise<S
       if (shot?.ok && shot.dataUrl) {
         result.screenshotDataUrl = shot.dataUrl;
 
-        // 如果之前 API 失败，现在有截图了，更新状态
         if (!result.ok || result.method === 'pending-screenshot') {
           const wasPending = result.method === 'pending-screenshot';
           result.ok = true;

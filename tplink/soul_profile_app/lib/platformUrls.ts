@@ -4,8 +4,6 @@ export type PlatformKey = 'weibo' | 'xhs' | 'douyin' | 'netease' | 'douban' | 'z
 
 const CANON = {
   weibo: (id: string) => `https://weibo.com/u/${id}`,
-  xhs: (id: string) =>
-    `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(id)}&source=web_explore_feed`,
   douyin: (id: string) => `https://www.douyin.com/user/${id}`,
   netease: (id: string) => `https://music.163.com/#/user/home?id=${id}`,
   douban: (id: string) => `https://www.douban.com/people/${id}/`,
@@ -24,6 +22,18 @@ function extractDoubanPeople(pathOrFull: string): string | null {
   const t = pathOrFull.trim().replace(/^\/+|\/+$/g, '');
   if (t.length > 0) return t;
   return null;
+}
+
+/** 小红书 App/网页「复制链接」得到的短链（个人主页或笔记） */
+export function isXhsShareLink(candidate: string): boolean {
+  const t = candidate.trim();
+  return /^(https?:\/\/)?xhslink\.com\/(m\/[A-Za-z0-9]+|user\/profile\/)/i.test(t);
+}
+
+function normalizeHttpsUrl(raw: string): string {
+  const t = raw.trim();
+  if (/^https?:\/\//i.test(t)) return t;
+  return `https://${t.replace(/^\/+/, '')}`;
 }
 
 export function resolvePlatformUrl(
@@ -48,19 +58,21 @@ export function resolvePlatformUrl(
       return { ok: true, url, extractedId: id };
     }
 
-    if (lower.includes('xiaohongshu.com')) {
-      let id: string | null = null;
-      try {
-        const u = new URL(raw);
-        id = u.searchParams.get('keyword');
-      } catch {
-        const m = raw.match(/keyword=([^&]+)/i);
-        id = m ? decodeURIComponent(m[1]) : null;
+    if (lower.includes('xhslink.com')) {
+      // 只接受 xhslink.com/m/xxx 格式的短链（含 xsec_token，无需 Cookie 即可加载主页）
+      if (/\/m\/[A-Za-z0-9]+/i.test(new URL(normalizeHttpsUrl(raw)).pathname)) {
+        const url = normalizeHttpsUrl(raw).split('?')[0]; // 去掉多余 query，只保留短链路径
+        return { ok: true, url, extractedId: url };
       }
-      if (!id || !id.trim()) return { ok: false, error: '无法从小红书链接中解析 keyword' };
-      const trimmed = id.trim();
-      const url = CANON.xhs(trimmed);
-      return { ok: true, url, extractedId: trimmed };
+      return { ok: false, error: '请粘贴 App 分享链接（xhslink.com/m/… 格式），不支持其他 xhslink 路径' };
+    }
+
+    if (lower.includes('xiaohongshu.com')) {
+      // 直接主页 URL 没有 xsec_token，无法不登录访问，必须用 App 分享链接
+      return {
+        ok: false,
+        error: '小红书主页无法直接访问（需登录），请在 App 内点击右上角「…」→「分享」→「复制链接」，粘贴 xhslink.com/m/… 格式的分享链接',
+      };
     }
 
     if (lower.includes('douyin.com')) {
@@ -104,7 +116,10 @@ export function resolvePlatformUrl(
     return { ok: true, url: CANON.weibo(id), extractedId: id };
   }
   if (platform === 'xhs') {
-    return { ok: true, url: CANON.xhs(raw), extractedId: raw };
+    return {
+      ok: false,
+      error: '请粘贴以 https://xhslink.com/m/ 开头的分享链接，或网页版 …/user/profile/… 主页链接（不支持仅填小红书号）',
+    };
   }
   if (platform === 'douyin') {
     if (!raw.length) return { ok: false, error: '抖音用户 ID 不能为空' };
@@ -131,18 +146,18 @@ export function resolvePlatformUrl(
 
 /**
  * Playwright 截图用 URL：与建档 canonical 对齐。
- * 小红书：24 位 hex 走个人主页，否则与建档一致走搜索页（keyword 不是 profile id）。
+ * 小红书：24 位 hex、xhslink 短链或带 /user/profile/ 的链接；不再使用搜索页。
  * 网易云：使用无 hash 直链，避免 SPA 在自动化里落到 404。
  */
 export function screenshotTargetUrl(platform: PlatformKey, extractedId: string): string {
   switch (platform) {
     case 'weibo':
       return `https://weibo.com/u/${extractedId}`;
-    case 'xhs':
-      if (/^[a-f0-9]{24}$/i.test(extractedId)) {
-        return `https://www.xiaohongshu.com/user/profile/${extractedId}`;
-      }
-      return CANON.xhs(extractedId);
+    case 'xhs': {
+      // extractedId 是完整 URL（xhslink.com/m/... 或含 token 的 xiaohongshu.com 链接）
+      if (extractedId.startsWith('http')) return extractedId;
+      return `https://www.xiaohongshu.com/explore`;
+    }
     case 'douyin':
       return extractedId && extractedId !== 'self'
         ? `https://www.douyin.com/user/${extractedId}`

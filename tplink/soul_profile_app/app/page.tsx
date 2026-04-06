@@ -1,54 +1,115 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+ import { useEffect, useRef, useState } from 'react';
+ import { useRouter } from 'next/navigation';
 import html2canvas from 'html2canvas';
 import './globals.css';
 import { resolvePlatformUrl, type PlatformKey } from '@/lib/platformUrls';
 import { SoulReportRef } from '@/components/SoulReportRef';
+import { APP_BASE_PATH } from '@/lib/appBasePath';
 
-const TOTAL_ONBOARD_STEPS = 4;
+/** 解析 /api/analyze 的 NDJSON 流（服务端定时 ping，避免反代 502） */
+async function readAnalyzeNdjsonStream(res: Response): Promise<{
+  report: unknown;
+  userScreenshotUrls: string[];
+  mbtiIp: unknown;
+}> {
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error('无法读取响应');
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let done: {
+    report: unknown;
+    userScreenshotUrls: string[];
+    mbtiIp: unknown;
+  } | null = null;
+  let errPayload: { status?: number; error?: string } | null = null;
+  const consumeLine = (raw: string) => {
+    const t = raw.trim();
+    if (!t) return;
+    const j = JSON.parse(t) as {
+      type?: string;
+      status?: number;
+      error?: string;
+      report?: unknown;
+      userScreenshotUrls?: string[];
+      mbtiIp?: unknown;
+    };
+    if (j.type === 'done' && j.report !== undefined) {
+      done = {
+        report: j.report,
+        userScreenshotUrls: Array.isArray(j.userScreenshotUrls) ? j.userScreenshotUrls : [],
+        mbtiIp: j.mbtiIp ?? null,
+      };
+    }
+    if (j.type === 'error') errPayload = { status: j.status, error: j.error };
+  };
+  while (true) {
+    const { value, done: streamDone } = await reader.read();
+    if (value) buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) consumeLine(line);
+    if (streamDone) {
+      if (buffer.trim()) consumeLine(buffer);
+      break;
+    }
+  }
+  if (errPayload) {
+    const e = new Error(errPayload.error || '请求错误') as Error & { status?: number };
+    e.status = errPayload.status;
+    throw e;
+  }
+  if (!done) throw new Error('未收到分析结果');
+  return done;
+}
+
+const TOTAL_ONBOARD_STEPS = 3;
 
 const PLATFORM_EXAMPLES: Record<PlatformKey, string> = {
   weibo:   'https://weibo.com/u/你的数字ID  或直接填数字ID',
-  xhs:     '你的小红书号（纯数字，不是昵称）',
+  xhs:     'https://xhslink.com/m/…（App 内「分享 → 复制链接」得到的短链）',
   douyin:  'https://www.douyin.com/user/MS4wLjAB…（完整主页链接）',
   netease: 'https://music.163.com/user/home?id=你的数字ID  或直接填数字ID',
   douban:  'https://www.douban.com/people/你的ID/  或直接填ID',
   zhihu:   'https://www.zhihu.com/people/你的用户名  或直接填用户名',
 };
 
+type PlatformHint = {
+  text: string;
+  link?: { label: string; href: string };
+};
+
 /** 每个平台的分步操作指引（让用户找到自己的链接/ID） */
-const PLATFORM_HINTS: Record<PlatformKey, string[]> = {
+const PLATFORM_HINTS: Record<PlatformKey, PlatformHint[]> = {
   weibo:   [
-    '打开微博网页版 weibo.com',
-    '点击右上角头像 → 进入你的个人主页',
-    '复制地址栏链接（形如 weibo.com/u/数字ID），粘贴到输入框',
+    { text: '打开微博网页版', link: { label: '官网入口', href: 'https://weibo.com' } },
+    { text: '点击右上角头像 → 进入你的个人主页' },
+    { text: '复制地址栏链接（形如 weibo.com/u/数字ID），粘贴到输入框' },
   ],
   xhs:     [
-    '打开小红书 App，点击底部「我」',
-    '点击「编辑资料」（头像下方）',
-    '找到「小红书号」一栏，复制这串数字（不是昵称）',
-    '将数字粘贴到输入框即可',
+    { text: '打开小红书 App，点底部「我」→ 右上角「···」→「分享」→「复制链接」' },
+    { text: '粘贴以 https://xhslink.com/m/ 开头的链接（网页版主页 URL 无法访问，必须用 App 分享链接）' },
   ],
   douyin:  [
-    '方法 A（App）：点底部「我」→ 右上角三横 → 分享 → 复制链接',
-    '方法 B（网页）：在电脑浏览器打开 douyin.com，进入你的主页，复制地址栏完整链接',
-    '粘贴到输入框，系统会自动识别',
+    { text: '方法 A（App）：点底部「我」→ 右上角三横 → 分享 → 复制链接', link: { label: '抖音 App', href: 'https://www.douyin.com' } },
+    { text: '方法 B（网页）：打开抖音官网', link: { label: '官网入口', href: 'https://www.douyin.com' } },
+    { text: '进入你的主页，复制地址栏完整链接，粘贴到输入框（系统会自动识别）' },
   ],
   netease: [
-    '打开网易云音乐网页版 music.163.com',
-    '点击右上角头像 → 我的主页',
-    '复制地址栏链接（形如 music.163.com/user/home?id=数字ID），粘贴到输入框',
+    { text: '打开网易云音乐网页版', link: { label: '官网入口', href: 'https://music.163.com' } },
+    { text: '点击右上角头像 → 我的主页' },
+    { text: '复制地址栏链接（形如 music.163.com/user/home?id=数字ID），粘贴到输入框' },
   ],
   douban:  [
-    '打开豆瓣网页版 douban.com',
-    '点击右上角头像 → 个人主页',
-    '复制地址栏链接（形如 douban.com/people/你的ID/），粘贴到输入框',
+    { text: '打开豆瓣网页版', link: { label: '官网入口', href: 'https://www.douban.com' } },
+    { text: '点击右上角头像 → 个人主页' },
+    { text: '复制地址栏链接（形如 douban.com/people/你的ID/），粘贴到输入框' },
   ],
   zhihu:   [
-    '打开知乎网页版 zhihu.com',
-    '点击右上角头像 → 个人主页',
-    '复制地址栏链接（形如 zhihu.com/people/你的用户名），粘贴到输入框',
+    { text: '打开知乎网页版', link: { label: '官网入口', href: 'https://www.zhihu.com' } },
+    { text: '点击右上角头像 → 个人主页' },
+    { text: '复制地址栏链接（形如 zhihu.com/people/你的用户名），粘贴到输入框' },
   ],
 };
 
@@ -62,12 +123,14 @@ const PLATFORM_NAMES: Record<PlatformKey, string> = {
 };
 
 const PLATFORM_KEYS = Object.keys(PLATFORM_NAMES) as PlatformKey[];
+const XHS_BINDING_ENABLED = true;
+const ACTIVE_PLATFORM_KEYS = PLATFORM_KEYS.filter((k) => (XHS_BINDING_ENABLED ? true : k !== 'xhs'));
 
 /** 与界面「示例」一致的可解析默认值（debug=1 时预填各平台输入框） */
 const DEBUG_PLATFORM_DEFAULTS: Record<PlatformKey, string> = {
   weibo: 'https://weibo.com/u/7487955617',
-  xhs: '416227302',
-  douyin: 'https://www.douyin.com/user/MS4wLjABAAAAExamplePlaceholder000000000000',
+  xhs: 'https://xhslink.com/m/2q3yn1USahZ',
+  douyin: 'https://www.douyin.com/user/MS4wLjABAAAAwBvVse-Ub8YW2GpdqATHmstGsvlNsdMWPM5clf3BQmM?from_tab_name=main',
   netease: 'https://music.163.com/#/user/home?id=530688535',
   douban: 'https://www.douban.com/people/26863705/',
   zhihu: 'https://www.zhihu.com/people/xiongsiji',
@@ -78,20 +141,57 @@ const DEBUG_DEFAULT_PASSWORD = 'debug123456';
 const DEBUG_TEXT_STEP3 = '【Debug 模式】这是一段用于快速联调的心声示例。';
 const DEBUG_TEXT_STEP4 = '【Debug】如果明天世界末日，今晚想好好吃一顿、和在乎的人待在一起。';
 
-const SESSION_DEBUG_KEY = 'soulmatch_debug';
+const SESSION_USER_SNAPSHOT_KEY = 'soulmatch_user_snapshot';
+
+/** 逐渐替换 Link 的隐私跳转，确保在同一标签页内导航并支持返回 */
+function PrivacyNavLink({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  return (
+    <button
+      type="button"
+      className="ref-privacy-link"
+      onClick={() => router.push('/privacy')}
+    >
+      {children}
+    </button>
+  );
+}
+
+type UploadSlot = 'moments' | 'life';
+type QuestionKey = 'q1' | 'q2';
+type StepUploadItem = {
+  id: string;
+  url: string;
+};
 
 function readDebugModeFromLocation(): boolean {
   if (typeof window === 'undefined') return false;
   const q = new URLSearchParams(window.location.search);
-  if (q.get('debug') === '0' || q.get('mode') === 'production') {
-    sessionStorage.removeItem(SESSION_DEBUG_KEY);
-    return false;
+  return q.get('debug') === '1' || q.get('mode') === 'debug';
+}
+
+function readUserSnapshot(): { id: string; name: string } | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(SESSION_USER_SNAPSHOT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { id?: string; name?: string };
+    if (parsed?.id && typeof parsed.id === 'string') {
+      return { id: parsed.id, name: parsed.name || '朋友' };
+    }
+    return null;
+  } catch {
+    return null;
   }
-  if (q.get('debug') === '1' || q.get('mode') === 'debug') {
-    sessionStorage.setItem(SESSION_DEBUG_KEY, '1');
-    return true;
+}
+
+function persistUserSnapshot(user: { id: string; name: string } | null) {
+  if (typeof window === 'undefined') return;
+  if (!user) {
+    sessionStorage.removeItem(SESSION_USER_SNAPSHOT_KEY);
+    return;
   }
-  return sessionStorage.getItem(SESSION_DEBUG_KEY) === '1';
+  sessionStorage.setItem(SESSION_USER_SNAPSHOT_KEY, JSON.stringify(user));
 }
 
 /** Debug：是否跳过自动登录（仅手动点登录） */
@@ -118,7 +218,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [user, setUser] = useState<{ id: string, name: string } | null>(null);
+  const [user, setUser] = useState<{ id: string, name: string, email?: string } | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
@@ -140,17 +240,21 @@ export default function App() {
   const [analysisStatus, setAnalysisStatus] = useState('正在整合你提供的信息…');
   /** step 3 文字输入 */
   const [textInput3, setTextInput3] = useState('');
-  /** step 4 文字输入 */
+  /** step 4 文字输入（与 step3 合并展示） */
   const [textInput4, setTextInput4] = useState('');
   /** 语音识别状态 */
-  const [isRecording, setIsRecording] = useState(false);
-  /** 朋友圈截图 / 生活照（服务端路径，与设计稿 0/5、0/10 对应） */
-  const [momentsUrls, setMomentsUrls] = useState<string[]>([]);
-  const [lifePhotoUrls, setLifePhotoUrls] = useState<string[]>([]);
-  const [uploadingSlot, setUploadingSlot] = useState<'moments' | 'life' | null>(null);
+  const [recordingTarget, setRecordingTarget] = useState<QuestionKey | null>(null);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  /** 朋友圈截图 / 生活照（服务端上传记录，支持删除） */
+  const [momentsUploads, setMomentsUploads] = useState<StepUploadItem[]>([]);
+  const [lifePhotoUploads, setLifePhotoUploads] = useState<StepUploadItem[]>([]);
+  const [uploadingSlot, setUploadingSlot] = useState<UploadSlot | null>(null);
+  const speechRef = useRef<any>(null);
+  const question1TextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const question2TextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   /**
-   * Debug：?debug=1 或 ?mode=debug；关闭用 ?debug=0。同会话内会记住（sessionStorage）。
+   * Debug：仅在 URL 显式带 ?debug=1 或 ?mode=debug 时启用。
    * 默认：预填后自动登录并进入「开始建档」新首页，然后自动绑定所有平台。
    * 若只想看登录页：?debug=1&autologin=0
    */
@@ -164,7 +268,7 @@ export default function App() {
     setTextInput3(DEBUG_TEXT_STEP3);
     setTextInput4(DEBUG_TEXT_STEP4);
     const nextVal: Partial<Record<PlatformKey, { ok: boolean; msg: string; url?: string }>> = {};
-    for (const id of PLATFORM_KEYS) {
+    for (const id of ACTIVE_PLATFORM_KEYS) {
       const val = DEBUG_PLATFORM_DEFAULTS[id];
       const r = resolvePlatformUrl(id, val);
       nextVal[id] = r.ok
@@ -179,6 +283,18 @@ export default function App() {
     (async () => {
       setLoading(true);
       try {
+        // 先尊重当前会话：已有登录就不再强行 debug 登录，避免返回时账号被覆盖
+        const meRes = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' });
+        if (meRes.ok) {
+          const meData = await meRes.json().catch(() => ({} as { user?: { id: string; name: string } }));
+          if (!cancelled && meData.user) {
+            setUser(meData.user);
+            persistUserSnapshot(meData.user);
+            setStep(0);
+            return;
+          }
+        }
+
         const tryLogin = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -192,6 +308,7 @@ export default function App() {
         if (cancelled) return;
         if (tryLogin.ok && loginData.user) {
           setUser(loginData.user);
+          persistUserSnapshot(loginData.user);
           setStep(0);
           // Debug 模式：自动绑定所有平台
           setTimeout(() => autoBindAllPlatforms(), 1000);
@@ -211,6 +328,7 @@ export default function App() {
         if (cancelled) return;
         if (tryReg.ok && regData.user) {
           setUser(regData.user);
+          persistUserSnapshot(regData.user);
           setStep(0);
           // Debug 模式：自动绑定所有平台
           setTimeout(() => autoBindAllPlatforms(), 1000);
@@ -222,7 +340,147 @@ export default function App() {
     return () => {
       cancelled = true;
     };
+  // Debug 初始化仅首屏执行一次，避免重复触发自动登录与自动绑定
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const snap = readUserSnapshot();
+    if (!snap) return;
+    setUser((prev) => prev ?? snap);
+    setStep((prev) => (prev === -1 ? 0 : prev));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const supported =
+      Boolean((window as any).SpeechRecognition) ||
+      Boolean((window as any).webkitSpeechRecognition);
+    setVoiceSupported(supported);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' });
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 403) {
+            persistUserSnapshot(null);
+            if (!cancelled) {
+              setUser(null);
+              setStep(-1);
+            }
+          }
+          return;
+        }
+        const data = await res.json().catch(() => ({} as { user?: { id: string; name: string; email?: string } }));
+        if (cancelled || !data.user) return;
+        const activeDebug = readDebugModeFromLocation();
+        if (!activeDebug && data.user.email === DEBUG_DEFAULT_EMAIL) {
+          persistUserSnapshot(null);
+          setUser(null);
+          setStep(-1);
+          return;
+        }
+        setUser(data.user);
+        persistUserSnapshot(data.user);
+        setStep((prev) => (prev === -1 ? 0 : prev));
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (!speechRef.current) return;
+      try {
+        speechRef.current.onend = null;
+        speechRef.current.stop();
+      } catch {
+        // ignore
+      } finally {
+        speechRef.current = null;
+      }
+    };
+  }, []);
+
+  const appendRecognizedText = (target: QuestionKey, transcript: string) => {
+    const text = transcript.trim();
+    if (!text) return;
+    const append = (prev: string) => (prev ? `${prev}${/[，。！？\s]$/.test(prev) ? '' : '，'}${text}` : text);
+    if (target === 'q1') setTextInput3(append);
+    else setTextInput4(append);
+  };
+
+  const stopSpeechInput = () => {
+    if (!speechRef.current) return;
+    try {
+      speechRef.current.stop();
+    } catch {
+      // ignore
+    } finally {
+      speechRef.current = null;
+      setRecordingTarget(null);
+    }
+  };
+
+  const focusQuestionTextarea = (target: QuestionKey) => {
+    const ref = target === 'q1' ? question1TextareaRef : question2TextareaRef;
+    ref.current?.focus();
+  };
+
+  const startSpeechInput = (target: QuestionKey) => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) {
+      setSaveMessage('当前浏览器不支持语音输入，请直接键盘输入');
+      focusQuestionTextarea(target);
+      return;
+    }
+    if (recordingTarget === target) {
+      stopSpeechInput();
+      return;
+    }
+    if (recordingTarget) stopSpeechInput();
+
+    try {
+      const rec = new SR();
+      speechRef.current = rec;
+      setRecordingTarget(target);
+      setSaveMessage('正在语音输入…再次点击麦克风可停止');
+      rec.lang = 'zh-CN';
+      rec.continuous = true;
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+      rec.onresult = (e: any) => {
+        const t = e?.results?.[e.results.length - 1]?.[0]?.transcript ?? '';
+        appendRecognizedText(target, String(t));
+      };
+      rec.onerror = (e: any) => {
+        const code = String(e?.error || '');
+        if (code === 'not-allowed' || code === 'service-not-allowed') {
+          setSaveMessage('麦克风权限未开启，请允许后重试，或直接键盘输入');
+        } else {
+          setSaveMessage('语音识别失败，请重试或直接键盘输入');
+        }
+        setRecordingTarget(null);
+        speechRef.current = null;
+      };
+      rec.onend = () => {
+        setRecordingTarget(null);
+        speechRef.current = null;
+      };
+      rec.start();
+    } catch {
+      setSaveMessage('语音输入启动失败，请直接键盘输入');
+      setRecordingTarget(null);
+      speechRef.current = null;
+    }
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -238,42 +496,108 @@ export default function App() {
     setLoading(false);
     if (res.ok) {
       setUser(data.user);
+      persistUserSnapshot(data.user);
       setStep(0);
     } else {
       alert(data.error);
     }
   };
 
-  const uploadScreenshotFile = async (file: File, slot: 'moments' | 'life') => {
-    const max = slot === 'moments' ? 5 : 10;
-    const current = slot === 'moments' ? momentsUrls.length : lifePhotoUrls.length;
-    if (current >= max) return;
-    setSaveMessage(null);
+  const getSlotMax = (slot: UploadSlot) => (slot === 'moments' ? 5 : 10);
+  const getSlotLabel = (slot: UploadSlot) => (slot === 'moments' ? '朋友圈截图' : '生活照片');
+  const getSlotCount = (slot: UploadSlot) => (
+    slot === 'moments' ? momentsUploads.length : lifePhotoUploads.length
+  );
+  const appendSlotUpload = (slot: UploadSlot, item: StepUploadItem) => {
+    if (slot === 'moments') setMomentsUploads((prev) => [...prev, item]);
+    else setLifePhotoUploads((prev) => [...prev, item]);
+  };
+
+  const uploadScreenshotFiles = async (files: File[], slot: UploadSlot) => {
+    if (!files.length) return;
+    if (uploadingSlot) return;
+
+    const max = getSlotMax(slot);
+    const current = getSlotCount(slot);
+    const remaining = max - current;
+    if (remaining <= 0) {
+      setSaveMessage(`${getSlotLabel(slot)}最多上传 ${max} 张`);
+      return;
+    }
+
+    const queue = files.slice(0, remaining);
+    if (files.length > remaining) {
+      setSaveMessage(`${getSlotLabel(slot)}最多 ${max} 张，已按上限上传`);
+    } else {
+      setSaveMessage(null);
+    }
+
     setUploadingSlot(slot);
-    setStepUploadProgress(35);
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('type', 'screenshot');
-    const res = await fetch('/api/upload', { method: 'POST', body: fd, credentials: 'include' });
-    const data = await res.json().catch(() => ({} as { error?: string; upload?: { url?: string } }));
-    if (res.ok) {
-      setStepUploadProgress(100);
-      const path = data.upload?.url;
-      if (path) {
-        if (slot === 'moments') setMomentsUrls((p) => [...p, path]);
-        else setLifePhotoUrls((p) => [...p, path]);
+    let successCount = 0;
+    let failedCount = 0;
+
+    for (let i = 0; i < queue.length; i += 1) {
+      const file = queue[i];
+      setStepUploadProgress(Math.max(5, Math.round((i / queue.length) * 90)));
+
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('type', 'screenshot');
+      const res = await fetch('/api/upload', { method: 'POST', body: fd, credentials: 'include' });
+      const data = await res.json().catch(() => ({} as { error?: string; upload?: { id?: string; url?: string } }));
+
+      if (res.ok && data.upload?.id && data.upload?.url) {
+        appendSlotUpload(slot, { id: data.upload.id, url: data.upload.url });
+        successCount += 1;
+      } else {
+        failedCount += 1;
+        const err = data.error ?? '';
+        const hint = err === '未登录' || err === '无效Token'
+          ? '登录状态已失效，请刷新页面后重新登录再试。'
+          : (err || '保存失败，请重试');
+        alert(hint);
       }
-      setSaveMessage('截图已添加，将用于档案分析');
+    }
+
+    if (successCount > 0) {
+      setStepUploadProgress(100);
+      setSaveMessage(
+        failedCount > 0
+          ? `已上传 ${successCount} 张，${failedCount} 张失败`
+          : `已上传 ${successCount} 张，支持继续添加`,
+      );
       setTimeout(() => setStepUploadProgress(0), 450);
     } else {
-      const err = data.error ?? '';
-      const hint = err === '未登录' || err === '无效Token'
-        ? '登录状态已失效，请刷新页面后重新登录再试。'
-        : (err || '保存失败，请重试');
-      alert(hint);
       setStepUploadProgress(0);
     }
+
     setUploadingSlot(null);
+  };
+
+  const removeUploadedScreenshot = async (slot: UploadSlot, uploadId: string) => {
+    setStepUploadProgress(30);
+    const res = await fetch('/api/upload', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ uploadId }),
+    });
+    const data = await res.json().catch(() => ({} as { error?: string }));
+    if (!res.ok) {
+      const err = data.error ?? '';
+      alert(err || '删除失败，请稍后重试');
+      setStepUploadProgress(0);
+      return;
+    }
+
+    if (slot === 'moments') {
+      setMomentsUploads((prev) => prev.filter((item) => item.id !== uploadId));
+    } else {
+      setLifePhotoUploads((prev) => prev.filter((item) => item.id !== uploadId));
+    }
+    setStepUploadProgress(100);
+    setSaveMessage('已删除');
+    setTimeout(() => setStepUploadProgress(0), 300);
   };
 
   const uploadText = async (content: string, type: string, goNext: boolean = true) => {
@@ -301,6 +625,19 @@ export default function App() {
       setStepUploadProgress(0);
       return false;
     }
+  };
+
+  const submitQuestionStep = async () => {
+    stopSpeechInput();
+    if (textInput3.trim()) {
+      const ok = await uploadText(textInput3.trim(), 'text', false);
+      if (!ok) return;
+    }
+    if (textInput4.trim()) {
+      const ok = await uploadText(textInput4.trim(), 'voice-text', false);
+      if (!ok) return;
+    }
+    startAnalysis();
   };
 
   const bindPlatform = async (platformId: PlatformKey) => {
@@ -352,7 +689,7 @@ export default function App() {
   const autoBindAllPlatforms = async () => {
     if (!debugMode) return;
     console.log('[Debug] 开始自动绑定所有平台...');
-    for (const platformId of PLATFORM_KEYS) {
+    for (const platformId of ACTIVE_PLATFORM_KEYS) {
       const raw = DEBUG_PLATFORM_DEFAULTS[platformId];
       const resolved = resolvePlatformUrl(platformId, raw);
       if (!resolved.ok) continue;
@@ -406,26 +743,48 @@ export default function App() {
     try {
       setUserScreenshotUrls([]);
       const res = await fetch('/api/analyze', { method: 'POST', credentials: 'include' });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
+      const ct = res.headers.get('content-type') || '';
+      if (res.ok && ct.includes('ndjson')) {
+        const data = await readAnalyzeNdjsonStream(res);
         setAnalysisResult(
           data.report
-            ? { ...data.report, mbtiIp: data.mbtiIp ?? null }
+            ? { ...(data.report as Record<string, unknown>), mbtiIp: data.mbtiIp ?? null }
             : data.report,
         );
-        setUserScreenshotUrls(Array.isArray(data.userScreenshotUrls) ? data.userScreenshotUrls : []);
+        setUserScreenshotUrls(data.userScreenshotUrls);
         setStep(7);
       } else {
-        alert('分析失败: ' + (data.error || '请求错误'));
-        setStep(4);
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          report?: unknown;
+          userScreenshotUrls?: string[];
+          mbtiIp?: unknown;
+        };
+        if (res.ok && data.report) {
+          setAnalysisResult(
+            data.report
+              ? { ...(data.report as Record<string, unknown>), mbtiIp: data.mbtiIp ?? null }
+              : data.report,
+          );
+          setUserScreenshotUrls(Array.isArray(data.userScreenshotUrls) ? data.userScreenshotUrls : []);
+          setStep(7);
+        } else {
+          alert('分析失败: ' + (data.error || `请求错误 (${res.status})`));
+          setStep(3);
+        }
       }
-    } catch {
-      alert('网络错误，请重试');
-      setStep(4);
+    } catch (e) {
+      const st = (e as Error & { status?: number }).status;
+      const msg = e instanceof Error ? e.message : '网络错误';
+      if (st === 409) alert('正在分析中，请勿重复提交');
+      else alert(`网络错误：${msg}`);
+      setStep(3);
     } finally {
       clearInterval(timer);
     }
   };
+
+  const questionButtonLabel = stepUploadProgress > 0 ? '保存中…' : '下一步 →';
 
   const saveSoulPosterImage = async () => {
     const el = document.getElementById('soul-poster-capture');
@@ -490,9 +849,9 @@ export default function App() {
             </p>
             <p className="ref-home-privacy">
               不放心数据？
-              <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline', cursor: 'pointer' }}>
+              <PrivacyNavLink>
                 查看详细数据获取范围 &gt;
-              </a>
+              </PrivacyNavLink>
             </p>
           </div>
         </div>
@@ -526,14 +885,29 @@ export default function App() {
               📋 如何获取你自己的链接
             </p>
             <div style={{ marginBottom: '14px' }}>
-              {PLATFORM_HINTS[id].map((step, i) => (
+              {PLATFORM_HINTS[id].map((hint, i) => (
                 <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '6px', alignItems: 'flex-start' }}>
                   <span style={{
                     flexShrink: 0, width: '18px', height: '18px', borderRadius: '50%',
                     background: 'rgba(167,139,250,0.25)', color: '#c4b5fd',
                     fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}>{i + 1}</span>
-                  <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: '12px', margin: 0, lineHeight: 1.5 }}>{step}</p>
+                  <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: '12px', margin: 0, lineHeight: 1.5 }}>
+                    {hint.text}
+                    {hint.link && (
+                      <>
+                        {' '}
+                        <a
+                          href={hint.link.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: '#00f2fe', textDecoration: 'underline', wordBreak: 'break-all' }}
+                        >
+                          {hint.link.label}
+                        </a>
+                      </>
+                    )}
+                  </p>
                 </div>
               ))}
             </div>
@@ -588,8 +962,72 @@ export default function App() {
     );
   };
 
-  const boundPlatformCount = Object.keys(savedPlatforms).length;
-  /** 设计稿：阶段 1/4→25% … 4/4→100% */
+  const renderUploadSection = (slot: UploadSlot, title: string, desc: string, icon: string) => {
+    const uploads = slot === 'moments' ? momentsUploads : lifePhotoUploads;
+    const max = getSlotMax(slot);
+    const label = slot === 'moments' ? '朋友圈截图' : '生活照片';
+    const inputId = slot === 'moments' ? 'file-moments' : 'file-life';
+    const uploading = uploadingSlot === slot;
+
+    return (
+      <div className="ref-upload-section">
+        <h2 className="step-title ref-step-h2">{title}</h2>
+        <p className="step-desc">{desc}</p>
+        <div className="ref-upload-cap">
+          <span>{uploads.length}/{max}</span>
+        </div>
+        <div className="ref-upload-slot">
+          {uploads.length > 0 && (
+            <div className="ref-upload-thumb-grid">
+              {uploads.map((item) => (
+                <div key={item.id} className="ref-upload-thumb-card">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={item.url} alt="" className="ref-upload-thumb" />
+                  <button
+                    type="button"
+                    className="ref-upload-remove"
+                    aria-label="删除图片"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void removeUploadedScreenshot(slot, item.id);
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div
+            className={`upload-area ref-upload-dashed${uploading ? ' ref-upload-busy' : ''}`}
+            onClick={() => document.getElementById(inputId)?.click()}
+          >
+            <div className="upload-icon">{icon}</div>
+            <div className="upload-text">
+              {uploading ? '正在上传…' : '点击添加图片（支持多选）'}
+            </div>
+            <input
+              id={inputId}
+              type="file"
+              style={{ display: 'none' }}
+              accept="image/*"
+              multiple
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                if (files.length > 0) void uploadScreenshotFiles(files, slot);
+                e.target.value = '';
+              }}
+            />
+          </div>
+        </div>
+        <p className="ref-upload-hint">
+          已支持多选上传，缩略图中点击 × 即可删除，这些素材会直接加入你的档案海报。
+        </p>
+      </div>
+    );
+  };
+
+  /** 设计稿：阶段 1/3→33% … 3/3→100% */
   const progressPercent =
     step >= 1 && step <= TOTAL_ONBOARD_STEPS
       ? Math.min(100, Math.round((step / TOTAL_ONBOARD_STEPS) * 100))
@@ -655,14 +1093,9 @@ export default function App() {
 
             <p className="ref-home-privacy">
               不放心数据？
-              <a
-                href="/privacy"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: 'inherit', textDecoration: 'underline', cursor: 'pointer' }}
-              >
+              <PrivacyNavLink>
                 查看详细数据获取范围 &gt;
-              </a>
+              </PrivacyNavLink>
             </p>
 
             <div className="bottom-action ref-home-cta">
@@ -700,74 +1133,8 @@ export default function App() {
 
             {step === 1 && (
               <div className="step-body ref-step1-body">
-                <h2 className="step-title ref-step-h2">上传朋友圈截图</h2>
-                <p className="step-desc">任选能代表你线上气质的一张图，也可跳过。</p>
-                <div className="ref-upload-cap">
-                  <span>{momentsUrls.length}/5</span>
-                </div>
-                <div
-                  className={`upload-area ref-upload-dashed${uploadingSlot === 'moments' ? ' ref-upload-busy' : ''}`}
-                  onClick={() => document.getElementById('file-moments')?.click()}
-                >
-                  {momentsUrls.length > 0 ? (
-                    <div className="ref-upload-thumb-grid">
-                      {momentsUrls.map((u) => (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img key={u} src={u} alt="" className="ref-upload-thumb" />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="upload-icon">📸</div>
-                  )}
-                  <div className="upload-text">
-                    {uploadingSlot === 'moments' ? '正在上传…' : '点击可更换图片'}
-                  </div>
-                  <input
-                    id="file-moments"
-                    type="file"
-                    style={{ display: 'none' }}
-                    accept="image/*"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) void uploadScreenshotFile(f, 'moments');
-                      e.target.value = '';
-                    }}
-                  />
-                </div>
-
-                <h2 className="step-title ref-step-h2 ref-step-h2-second">上传最近生活照片</h2>
-                <div className="ref-upload-cap">
-                  <span>{lifePhotoUrls.length}/10</span>
-                </div>
-                <div
-                  className={`upload-area ref-upload-dashed${uploadingSlot === 'life' ? ' ref-upload-busy' : ''}`}
-                  onClick={() => document.getElementById('file-life')?.click()}
-                >
-                  {lifePhotoUrls.length > 0 ? (
-                    <div className="ref-upload-thumb-grid">
-                      {lifePhotoUrls.map((u) => (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img key={u} src={u} alt="" className="ref-upload-thumb" />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="upload-icon">🖼</div>
-                  )}
-                  <div className="upload-text">
-                    {uploadingSlot === 'life' ? '正在上传…' : '点击可更换图片'}
-                  </div>
-                  <input
-                    id="file-life"
-                    type="file"
-                    style={{ display: 'none' }}
-                    accept="image/*"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) void uploadScreenshotFile(f, 'life');
-                      e.target.value = '';
-                    }}
-                  />
-                </div>
+                {renderUploadSection('moments', '上传朋友圈截图', '可多选上传，最多 5 张；也可跳过。', '📸')}
+                {renderUploadSection('life', '上传最近生活照片', '支持多选，最多 10 张。', '🖼')}
 
                 <div className="bottom-action">
                   <button type="button" className="btn btn-primary btn-glow" onClick={() => setStep(2)}>
@@ -786,16 +1153,21 @@ export default function App() {
                   通过你填写的本人社交账号，创建独一无二的你的专属数字分身，绑定越多你的分身将越像你。所有数据均在此平台你本人使用，随时可解绑，无隐私风险。
                 </p>
                 <div className="platform-list">
-                  {renderPlatformRow('xhs', PLATFORM_NAMES.xhs, '📕', '#FFE6E6', '#FF2442')}
+                  {XHS_BINDING_ENABLED ? renderPlatformRow('xhs', PLATFORM_NAMES.xhs, '📕', '#FFE6E6', '#FF2442') : null}
                   {renderPlatformRow('weibo', PLATFORM_NAMES.weibo, '👀', '#FFF0E6', '#FF8200')}
                   {renderPlatformRow('douyin', PLATFORM_NAMES.douyin, '🎵', '#2C2C2E', '#FFFFFF')}
                   {renderPlatformRow('netease', PLATFORM_NAMES.netease, '🎵', '#FFEAEA', '#E60026')}
                   {renderPlatformRow('douban', PLATFORM_NAMES.douban, '🎬', '#E6F7EA', '#00B51D')}
                   {renderPlatformRow('zhihu', PLATFORM_NAMES.zhihu, '💡', '#E6F0FF', '#0066FF')}
                 </div>
+                {!XHS_BINDING_ENABLED && (
+                  <p style={{ marginTop: '8px', fontSize: '12px', color: 'rgba(255,210,130,0.95)' }}>
+                    小红书入口已暂时关闭，后续恢复后会重新开放。
+                  </p>
+                )}
                 <div className="bottom-action">
                   <button type="button" className="btn btn-primary btn-glow" onClick={() => setStep(3)}>
-                    跳过
+                    下一步 →
                   </button>
                 </div>
               </div>
@@ -804,7 +1176,7 @@ export default function App() {
             {step === 3 && (
               <div className="step-body ref-chat-step">
                 <h2 className="ref-chat-h1">让我更了解你吧</h2>
-                <p className="ref-chat-sub">和你的分身聊一聊，加深熟悉度吧！</p>
+                <p className="ref-chat-sub">最后两题合并成一页，填完即可生成灵魂档案。</p>
                 <div className="ref-chat-row">
                   <div className="ref-chat-avatar" aria-hidden>
                     🧙
@@ -818,6 +1190,7 @@ export default function App() {
                 </div>
                 <textarea
                   id="text-input"
+                  ref={question1TextareaRef}
                   className="glass-input ref-chat-textarea"
                   placeholder="输入你想说的心声…"
                   rows={5}
@@ -825,60 +1198,18 @@ export default function App() {
                   onChange={(e) => setTextInput3(e.target.value)}
                 />
                 <div className="ref-chat-toolbar">
-                  <span className="ref-chat-tool-ico" aria-hidden>
-                    ⌨
-                  </span>
+                  <button type="button" className="ref-chat-keyboard-btn" onClick={() => focusQuestionTextarea('q1')}>
+                    键盘输入
+                  </button>
                   <button
                     type="button"
                     className="ref-chat-mic"
                     aria-label="语音输入"
-                    onClick={() => {
-                      const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-                      if (!SR) {
-                        alert('当前浏览器不支持语音输入，请手动输入');
-                        return;
-                      }
-                      if (isRecording) return;
-                      const rec = new SR();
-                      rec.lang = 'zh-CN';
-                      rec.continuous = false;
-                      rec.interimResults = false;
-                      setIsRecording(true);
-                      rec.onresult = (e: any) => {
-                        const t = e.results[0][0].transcript;
-                        setTextInput3((prev) => (prev ? `${prev}，${t}` : t));
-                      };
-                      rec.onerror = () => setIsRecording(false);
-                      rec.onend = () => setIsRecording(false);
-                      rec.start();
-                    }}
+                    onClick={() => startSpeechInput('q1')}
                   >
-                    {isRecording ? '⏹' : '🎤'}
-                  </button>
-                  <span style={{ flex: 1 }} />
-                </div>
-                <div className="bottom-action">
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-glow"
-                    onClick={() => {
-                      if (textInput3.trim()) {
-                        void uploadText(textInput3, 'text', true);
-                      } else {
-                        setStep(4);
-                      }
-                    }}
-                  >
-                    {stepUploadProgress > 0 ? '保存中…' : textInput3.trim() ? '保存并继续 →' : '跳过'}
+                    {recordingTarget === 'q1' ? '⏹' : '🎤'}
                   </button>
                 </div>
-              </div>
-            )}
-
-            {step === 4 && (
-              <div className="step-body ref-chat-step">
-                <h2 className="ref-chat-h1">让我更了解你吧</h2>
-                <p className="ref-chat-sub">和你的分身聊一聊，加深熟悉度吧！</p>
                 <div className="ref-chat-row">
                   <div className="ref-chat-avatar" aria-hidden>
                     🧙
@@ -889,6 +1220,7 @@ export default function App() {
                   </div>
                 </div>
                 <textarea
+                  ref={question2TextareaRef}
                   className="glass-input ref-chat-textarea"
                   placeholder="输入你的回答…"
                   rows={4}
@@ -896,48 +1228,30 @@ export default function App() {
                   onChange={(e) => setTextInput4(e.target.value)}
                 />
                 <div className="ref-chat-toolbar">
-                  <span className="ref-chat-tool-ico" aria-hidden>
-                    ⌨
-                  </span>
+                  <button type="button" className="ref-chat-keyboard-btn" onClick={() => focusQuestionTextarea('q2')}>
+                    键盘输入
+                  </button>
                   <button
                     type="button"
                     className="ref-chat-mic"
                     aria-label="语音输入"
-                    onClick={() => {
-                      const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-                      if (!SR) {
-                        alert('当前浏览器不支持语音输入，请手动输入');
-                        return;
-                      }
-                      if (isRecording) return;
-                      const rec = new SR();
-                      rec.lang = 'zh-CN';
-                      rec.continuous = false;
-                      rec.interimResults = false;
-                      setIsRecording(true);
-                      rec.onresult = (e: any) => {
-                        const t = e.results[0][0].transcript;
-                        setTextInput4((prev) => (prev ? `${prev}，${t}` : t));
-                      };
-                      rec.onerror = () => setIsRecording(false);
-                      rec.onend = () => setIsRecording(false);
-                      rec.start();
-                    }}
+                    onClick={() => startSpeechInput('q2')}
                   >
-                    {isRecording ? '⏹' : '🎤'}
+                    {recordingTarget === 'q2' ? '⏹' : '🎤'}
                   </button>
-                  <span style={{ flex: 1 }} />
+                </div>
+                <div className="ref-chat-voice-hint">
+                  {voiceSupported
+                    ? '点击麦克风即可同步语音输入，点击停止后自动保存。'
+                    : '当前浏览器暂不支持语音输入，请直接使用键盘。'}
                 </div>
                 <div className="bottom-action">
                   <button
                     type="button"
                     className="btn btn-primary btn-glow"
-                    onClick={async () => {
-                      if (textInput4.trim()) await uploadText(textInput4, 'voice-text', false);
-                      startAnalysis();
-                    }}
+                    onClick={() => void submitQuestionStep()}
                   >
-                    {textInput4.trim() ? '生成灵魂档案 →' : '跳过'}
+                    {questionButtonLabel}
                   </button>
                 </div>
               </div>

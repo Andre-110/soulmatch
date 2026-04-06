@@ -86,6 +86,8 @@ type Props = {
     mbtiIp?: { code: string; imageSrc: string; rawLabel?: string } | null;
     /** 长文档案（包含 LLM 生成的名人数据） */
     article?: {
+      /** 与 `overall` 可能不同；用于深度区导语，避免与首屏重复同一段 */
+      guaranteeIntro?: string;
       section2?: {
         celebrities?: Array<{
           order: number;
@@ -117,6 +119,7 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, onSave
   const [ipSrc, setIpSrc] = useState(primarySrc);
   const ipFallbackOnce = useRef(false);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIpSrc(primarySrc);
     ipFallbackOnce.current = false;
   }, [primarySrc]);
@@ -127,20 +130,89 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, onSave
   while (checklist.length < 3) checklist.push('更多气质线索见档案叙事');
 
   // 根据 MBTI 匹配音乐
-  const recommendedMusic = getRecommendedMusic(analysisResult.mbti);
+  const recommendedMusic = getRecommendedMusic(mbtiIp.code);
 
-  // 获取 LLM 生成的名人数据，如果没有则使用硬编码的占位数据
+  // 获取 LLM 生成的名人数据
   const llmCelebrities = analysisResult.article?.section2?.celebrities || [];
-  const hasLlmCelebrities = llmCelebrities.length === 3;
+  // 检测是否为 stub（名字包含"待模型生成"或为空）
+  const isRealCelebrity = (c: { name: string }) =>
+    c.name.trim().length > 0 && !c.name.includes('待模型生成') && !c.name.includes('—');
+  const hasLlmCelebrities = llmCelebrities.length === 3 && llmCelebrities.every(isRealCelebrity);
 
-  // 如果 LLM 生成了名人数据，使用它；否则使用硬编码占位
-  const displayCelebrities = hasLlmCelebrities
-    ? llmCelebrities
-    : [
-        { order: 1, name: '何炅', angle: '温暖治愈·高共情', evidence: '待 AI 分析生成' },
-        { order: 2, name: '苏东坡', angle: '一半烟火·一半诗意', evidence: '待 AI 分析生成' },
-        { order: 3, name: '杨绛', angle: '内心丰盈·温柔有力量', evidence: '待 AI 分析生成' },
-      ];
+  const platformCount = Math.max(1, Math.min(6, blocks.length));
+  const homePageCount = blocks.length > 0 ? blocks.length : platformCount;
+  const digitalTwinTitle = user?.name?.trim()
+    ? `${user.name.trim()}的数字映像`
+    : '数字橙汁';
+  const overallTrim = analysisResult.overall?.trim() ?? '';
+  const guaranteeTrim = analysisResult.article?.guaranteeIntro?.trim() ?? '';
+  const isStubIntro = (s: string) =>
+    s.includes('离线') || s.includes('兜底生成') || s.includes('OPENAI_API_KEY');
+
+  /** 检测并替换平台登录页/无效抓取文字 */
+  const cleanPlatformDesc = (desc: string, fallback: string): string => {
+    if (!desc || desc.length === 0) return fallback;
+    const looksLikeLoginPage =
+      /沪ICP|行吟信息科技|创作中心.*业务合作.*发现.*直播.*发布.*通知.*登录|你的浏览器似乎开启了广告屏蔽/.test(desc);
+    if (looksLikeLoginPage) return fallback;
+    return desc;
+  };
+  const deepIntro =
+    guaranteeTrim && guaranteeTrim !== overallTrim && !isStubIntro(guaranteeTrim)
+      ? guaranteeTrim
+      : `以下按「核心人格 → 兴趣 → 表达 → 生活节奏」展开，逐条对应你已绑定平台的主页摘录。`;
+
+  const sectionConfigs = [
+    { title: '核心人格', icon: '🧠', subtitle: '人格底色 · 价值观', fallback: '继续提供素材，我们会为你精确拆解人格核心。' },
+    { title: '兴趣爱好', icon: '🎯', subtitle: '热爱与流量', fallback: '更多平台素材可解锁你最在意的兴趣标签。' },
+    { title: '说话风格 · 三观', icon: '💬', subtitle: '语气 / 立场', fallback: '连结更多内容可让AI把你的语调与立场描摹得更真。' },
+    { title: '生活节奏', icon: '🌿', subtitle: '日常节奏', fallback: '继续上传照片与故事，描绘你真实的仪式感。' },
+  ];
+
+  const deepSections = sectionConfigs.map((config, idx) => {
+    const block = blocks[idx];
+    const rawDesc = block?.description ?? '';
+    const cleanedDesc = cleanPlatformDesc(rawDesc, config.fallback);
+    const summary = cleanedDesc.length > 0
+      ? (cleanedDesc.length > 140 ? `${cleanedDesc.slice(0, 140)}…` : cleanedDesc)
+      : config.fallback;
+    const highlightTags = block?.tags?.slice(0, 3).map((tag) => `#${tag}`);
+    const highlights = [
+      block?.title,
+      highlightTags?.length ? highlightTags.join(' · ') : undefined,
+      block?.source,
+    ].filter(Boolean);
+    return {
+      ...config,
+      summary,
+      highlights: highlights.length
+        ? highlights
+        : ['继续提供素材即可解锁更多细节'],
+    };
+  });
+
+  const musicLabel = recommendedMusic.name || '你的专属歌单';
+  const mainTag = tags[0] ?? '天然温柔';
+  const secondTag = tags[1] ?? '理性踏实';
+  const thirdTag = tags[2] ?? '松弛有界';
+  const digitalMoments = [
+    {
+      time: '07:30 · 晨起',
+      text: `自然醒后放一首《${musicLabel}》，让 ${mainTag} 的节奏柔化早晨，先从不卷的人生开始。`,
+    },
+    {
+      time: '11:00 · 内容 / 工作',
+      text: `${analysisResult.title ?? '在数字空间写实质故事'} 的节奏感，让 ${secondTag} 的行动与创意协调，任务有序而不压迫。`,
+    },
+    {
+      time: '18:30 · 烟火生活',
+      text: `日常中渗透着 ${checklist[0] ?? '温柔守护'}，享受食物、交谈与安静的边界，碾压掉所有焦虑。`,
+    },
+    {
+      time: '22:30 · 静心',
+      text: `放下手机、盘腿坐下，用 ${thirdTag} 的态度重启自己，给身体与情绪一个软着陆。`,
+    },
+  ];
 
   return (
     <div className="soul-report-ref-root">
@@ -204,26 +276,76 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, onSave
                 <div className="ref-rp-celeb-title">
                   <span>🌟</span> 和你灵魂高度契合的名人
                 </div>
-                <div className="ref-rp-celeb-grid">
-                  {displayCelebrities.map((c, idx) => (
-                    <div key={c.order || idx} className="ref-rp-celeb-item">
-                      <div className="ref-rp-celeb-av">
-                        <img src={`https://picsum.photos/seed/${c.name}/80/80`} alt="" />
-                      </div>
-                      <div className="ref-rp-celeb-name">{c.name}</div>
-                      <div className="ref-rp-celeb-desc">{c.angle}</div>
-                      {hasLlmCelebrities && (
-                        <div className="ref-rp-celeb-evidence" style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)', marginTop: '6px', lineHeight: '1.4' }}>
-                          {c.evidence.slice(0, 80)}{c.evidence.length > 80 ? '...' : ''}
+                {hasLlmCelebrities ? (
+                  <div className="ref-rp-celeb-grid">
+                    {llmCelebrities.map((c, idx) => (
+                      <div key={c.order || idx} className="ref-rp-celeb-item">
+                        <div className="ref-rp-celeb-av" style={{ background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }}>
+                          🌟
                         </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                        <div className="ref-rp-celeb-name">{c.name}</div>
+                        <div className="ref-rp-celeb-desc">{c.angle}</div>
+                        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)', marginTop: '6px', lineHeight: '1.4' }}>
+                          {c.evidence.slice(0, 80)}{c.evidence.length > 80 ? '…' : ''}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '18px 8px', color: 'rgba(255,255,255,0.75)', fontSize: '14px', lineHeight: '1.8' }}>
+                    <div style={{ fontSize: '28px', marginBottom: '8px' }}>✨</div>
+                    <div>完成在线分析后，AI 将为你</div>
+                    <div>精准匹配 <strong style={{ color: '#ffd1ff' }}>3 位</strong> 气质高度相近的名人</div>
+                  </div>
+                )}
               </div>
             </div>
 
             <div className="ref-rp-bounce-tip">恭喜你的 AI 分身已创建，下滑查看它的一天吧！ 👇</div>
+          </div>
+        </section>
+
+        <section className="ref-rp-section ref-rp-deep-section">
+          <div className="ref-rp-deep-inner">
+            <p className="ref-rp-deep-kicker">
+              你的全网人格全维度精准解码（100% 来自你 {homePageCount} 个主页的实锤细节）
+            </p>
+            <h3 className="ref-rp-deep-heading">一、全维度细节拆解</h3>
+            <p className="ref-rp-deep-subtitle">{deepIntro}</p>
+            <div className="ref-rp-deep-grid">
+              {deepSections.map((section) => (
+                <article key={section.title} className="ref-rp-deep-card">
+                  <div className="ref-rp-deep-card-icon">{section.icon}</div>
+                  <div className="ref-rp-deep-card-title">
+                    <h4>{section.title}</h4>
+                    <span>{section.subtitle}</span>
+                  </div>
+                  <p>{section.summary}</p>
+                  <ul>
+                    {section.highlights.map((highlight, idx) => (
+                      <li key={`${section.title}-${idx}`}>{highlight}</li>
+                    ))}
+                  </ul>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="ref-rp-section ref-rp-digital-day">
+          <div className="ref-rp-deep-inner">
+            <p className="ref-rp-digital-heading">二、你的 AI 分身「{digitalTwinTitle}」的一天</p>
+            <p className="ref-rp-digital-sub">
+              100% 复刻你的节奏，给你允许放慢的许可证、清晰的三观与隐私边界。
+            </p>
+            <div className="ref-rp-digital-grid">
+              {digitalMoments.map((moment) => (
+                <article key={moment.time} className="ref-rp-digital-moment">
+                  <p className="ref-rp-digital-time">{moment.time}</p>
+                  <p className="ref-rp-digital-text">{moment.text}</p>
+                </article>
+              ))}
+            </div>
           </div>
         </section>
 
@@ -233,9 +355,10 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, onSave
             title: '探索你的数字足迹',
             description: '通过分析你的社交平台、音乐品味、阅读偏好等多维度数据，AI 正在为你构建专属的数字分身。绑定更多平台，让分身更了解你。',
             source: '多平台数据分析',
+            tags: [] as string[],
           };
-          const descShort =
-            b.description.length > 220 ? `${b.description.slice(0, 220)}…` : b.description;
+          const tagLine =
+            b.tags.length > 0 ? b.tags.slice(0, 4).map((t) => `#${t}`).join(' · ') : null;
           return (
             <section
               key={idx}
@@ -254,7 +377,15 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, onSave
                 <p className="ref-rp-scene-time">{scene.time}</p>
                 <p className="ref-rp-scene-co">你的 AI 分身 · 坐标数字空间</p>
                 <p className="ref-rp-scene-h1">{b.title}</p>
-                <p className="ref-rp-scene-body">{descShort}</p>
+                {tagLine ? <p className="ref-rp-scene-body">{tagLine}</p> : null}
+                {(() => {
+                  const sceneDesc = cleanPlatformDesc(b.description, '');
+                  return sceneDesc.length > 20 ? (
+                    <p className="ref-rp-scene-body" style={{ fontSize: '15px', lineHeight: '1.7', opacity: 0.9 }}>
+                      {sceneDesc.length > 120 ? `${sceneDesc.slice(0, 120)}…` : sceneDesc}
+                    </p>
+                  ) : null;
+                })()}
                 <p className="ref-rp-scene-src">来源：{b.source}</p>
                 <div className="ref-rp-scene-img">
                   <img
@@ -275,15 +406,21 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, onSave
           >
             <h3 className="ref-rp-more-title">更多线索解读</h3>
             <div className="ref-rp-more-list">
-              {blocks.slice(4).map((b, i) => (
-                <div key={i} className="ref-rp-more-card">
-                  <div className="ref-rp-more-meta">
-                    {b.icon} {b.source}
+              {blocks.slice(4).map((b, i) => {
+                const displayDesc = cleanPlatformDesc(
+                  b.description,
+                  '该平台需要登录后才能查看完整主页，截图数据已作为视觉线索纳入分析。',
+                );
+                return (
+                  <div key={i} className="ref-rp-more-card">
+                    <div className="ref-rp-more-meta">
+                      {b.icon} {b.source}
+                    </div>
+                    <div className="ref-rp-more-h">{b.title}</div>
+                    <p className="ref-rp-more-p">{displayDesc}</p>
                   </div>
-                  <div className="ref-rp-more-h">{b.title}</div>
-                  <p className="ref-rp-more-p">{b.description}</p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}
