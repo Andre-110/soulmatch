@@ -1,74 +1,32 @@
 import { chromium } from 'playwright-core';
 import fs from 'fs';
-import path from 'path';
-import type { PlatformKey } from '@/lib/platformUrls';
-
-/** 运行时读取，避免 import 早于 dotenv / systemd 注入 */
-function resolveChromePath(): string {
-  if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
-  if (process.platform === 'darwin') {
-    return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-  }
-  return '/usr/bin/google-chrome';
-}
-
-function resolveCookiesDir(): string {
-  return process.env.COOKIES_DIR ?? path.join(process.cwd(), '..', 'cookies');
-}
+import { screenshotTargetUrl, type PlatformKey } from '@/lib/platformUrls';
+import { findCookieFilePath, findDouyinCookieFilePath } from '@/lib/cookieFilePaths';
+import {
+  extensionCookiesToPlaywright,
+  type BrowserExtensionCookie,
+} from '@/lib/browserExtensionCookies';
+import { CHROME_HEADLESS_BASE_ARGS, resolveChromePath } from '@/lib/playwrightChrome';
 
 const COOKIE_FILES: Record<PlatformKey, string> = {
   xhs:     'cookies (6).json',
   weibo:   'cookies (7).json',
-  douyin:  'cookies (8).json',
+  douyin:  'cookies (20).json',
   netease: 'cookies (9).json',
   douban:  'cookies (10).json',
+  zhihu:   'cookies (11).json',
 };
 
-type RawCookie = {
-  name: string;
-  value: string;
-  domain: string;
-  path: string;
-  secure?: boolean;
-  httpOnly?: boolean;
-  sameSite?: string;
-  expirationDate?: number;
-};
-
-function loadCookies(platform: PlatformKey): RawCookie[] {
+function loadCookies(platform: PlatformKey): BrowserExtensionCookie[] {
   try {
-    const file = path.join(resolveCookiesDir(), COOKIE_FILES[platform]);
-    return JSON.parse(fs.readFileSync(file, 'utf-8')) as RawCookie[];
+    const file =
+      platform === 'douyin' ? findDouyinCookieFilePath() : findCookieFilePath(COOKIE_FILES[platform]);
+    if (!file) return [];
+    return JSON.parse(fs.readFileSync(file, 'utf-8')) as BrowserExtensionCookie[];
   } catch {
     return [];
   }
 }
-
-/** 把 Chrome 插件导出格式转成 Playwright 格式 */
-function toPwCookies(raw: RawCookie[]) {
-  return raw
-    .filter((c) => c.name && c.value && c.domain)
-    .map((c) => ({
-      name: c.name,
-      value: c.value,
-      domain: c.domain.startsWith('.') ? c.domain : `.${c.domain}`,
-      path: c.path || '/',
-      secure: c.secure ?? false,
-      httpOnly: c.httpOnly ?? false,
-      sameSite: (['Strict', 'Lax', 'None'].includes(c.sameSite ?? '')
-        ? c.sameSite
-        : 'None') as 'Strict' | 'Lax' | 'None',
-      expires: c.expirationDate ? Math.floor(c.expirationDate) : -1,
-    }));
-}
-
-const PLATFORM_URLS: Record<PlatformKey, (id: string) => string> = {
-  weibo:   (id) => `https://weibo.com/u/${id}`,
-  xhs:     (id) => `https://www.xiaohongshu.com/user/profile/${id}`,
-  douyin:  (id) => id && id !== 'self' ? `https://www.douyin.com/user/${id}` : `https://www.douyin.com/user/self`,
-  netease: (id) => `https://music.163.com/#/user/home?id=${id}`,
-  douban:  (id) => `https://www.douban.com/people/${id}/`,
-};
 
 export type ScreenshotResult = {
   ok: boolean;
@@ -85,7 +43,7 @@ export async function screenshotPlatformPage(
   platform: PlatformKey,
   extractedId: string,
 ): Promise<ScreenshotResult> {
-  const url = PLATFORM_URLS[platform](extractedId);
+  const url = screenshotTargetUrl(platform, extractedId);
   const rawCookies = loadCookies(platform);
   if (rawCookies.length === 0) {
     return { ok: false, error: `未找到 ${platform} 的 cookie 文件` };
@@ -96,7 +54,7 @@ export async function screenshotPlatformPage(
     browser = await chromium.launch({
       executablePath: resolveChromePath(),
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      args: [...CHROME_HEADLESS_BASE_ARGS],
     });
     const context = await browser.newContext({
       viewport: { width: 390, height: 844 },  // iPhone 尺寸，适合移动端页面
@@ -105,7 +63,7 @@ export async function screenshotPlatformPage(
       locale: 'zh-CN',
     });
 
-    await context.addCookies(toPwCookies(rawCookies));
+    await context.addCookies(extensionCookiesToPlaywright(rawCookies));
 
     const page = await context.newPage();
     await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });

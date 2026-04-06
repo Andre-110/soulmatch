@@ -2,15 +2,22 @@ import { NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import { cookies } from 'next/headers';
 import prisma from '@/lib/prisma';
-import { scrapeFromPlatformUploads, scrapeOutcomeToDisplayName } from '@/lib/profileScrape';
+import {
+  scrapeFromPlatformUploads,
+  scrapeOutcomeToDisplayName,
+  summarizeScrapesForLog,
+} from '@/lib/profileScrape';
 import {
   buildFallbackSoulReport,
   ensureBlocksCoverAllScrapes,
   ensureUserHandUploadBlock,
   tryOpenAISoulReport,
 } from '@/lib/soulReportOpenAI';
+import { buildProfileNormalizedCreate } from '@/lib/profilePersist';
+import { buildSoulReportInputRecord } from '@/lib/soulReportRecord';
 import fs from 'fs';
 import path from 'path';
+import { resolveMbtiIpFromReport } from '@/lib/mbtiIpIndex';
 
 /** 抓取多站主页可能较慢（含 Reader 回退） */
 export const maxDuration = 120;
@@ -30,11 +37,19 @@ export async function POST() {
     });
 
     const scrapes = await scrapeFromPlatformUploads(uploads);
+    console.log(`[Analyze] userId=${decoded.userId} 抓取摘要: ${summarizeScrapesForLog(scrapes)}`);
 
+    // 去重：相同内容只保留第一条（避免 debug 模式多次写入同一段文字）
+    const seenTexts = new Set<string>();
     const userTexts = uploads
       .filter((u) => u.type === 'text' || u.type === 'voice-text')
-      .map((u) => u.content || '')
-      .filter(Boolean);
+      .map((u) => (u.content || '').trim())
+      .filter((t) => {
+        if (!t || seenTexts.has(t)) return false;
+        seenTexts.add(t);
+        return true;
+      })
+      .slice(0, 10);  // 最多 10 条，防止塞爆 context
 
     const screenshotCount = uploads.filter((u) => u.type === 'screenshot' && u.url).length;
 
@@ -60,10 +75,11 @@ export async function POST() {
     const context = contextParts.join('');
 
     // 平台截图（Playwright 抓取的）→ 再拼接用户手传图；二者顺序须与 context 说明一致
-    const platformShotUrls: string[] = scrapes
+    const platformShotsWithKey = scrapes
       .filter((o) => o.screenshotDataUrl)
-      .map((o) => o.screenshotDataUrl as string);
-    const screenshotDataUrls: string[] = [...platformShotUrls];
+      .map((o) => ({ key: o.platform, dataUrl: o.screenshotDataUrl as string }));
+    const platformShotKeys: string[] = platformShotsWithKey.map((p) => p.key);
+    const screenshotDataUrls: string[] = platformShotsWithKey.map((p) => p.dataUrl);
 
     for (const s of userScreenshots) {
       try {
@@ -77,7 +93,9 @@ export async function POST() {
       } catch { /* 文件不存在则跳过 */ }
     }
 
-    let report = await tryOpenAISoulReport(context, screenshotDataUrls);
+    const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    let report = await tryOpenAISoulReport(context, screenshotDataUrls, platformShotKeys);
+    const reportSource = report ? 'openai' : 'fallback';
     if (!report) {
       report = buildFallbackSoulReport({ scrapes, userTexts, screenshotCount });
     } else {
@@ -85,14 +103,28 @@ export async function POST() {
       report = ensureUserHandUploadBlock(report, screenshotCount);
     }
 
-    await prisma.profile.create({
-      data: {
-        userId: decoded.userId,
-        resultData: JSON.stringify(report),
-      },
+    const inputRecord = buildSoulReportInputRecord({
+      uploads,
+      scrapes,
+      userTexts,
+      userScreenshotUrls,
+      screenshotCount,
+      visionImageCount: screenshotDataUrls.length,
+      context,
+      reportSource,
+      openaiModel: reportSource === 'openai' ? openaiModel : undefined,
     });
 
-    return NextResponse.json({ success: true, report, userScreenshotUrls });
+    await prisma.profile.create({
+      data: buildProfileNormalizedCreate({
+        userId: decoded.userId,
+        input: inputRecord,
+        report,
+      }),
+    });
+
+    const mbtiIp = resolveMbtiIpFromReport(report.mbti);
+    return NextResponse.json({ success: true, report, userScreenshotUrls, mbtiIp });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: '分析生成失败' }, { status: 500 });

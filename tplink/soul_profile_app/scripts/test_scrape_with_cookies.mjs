@@ -7,7 +7,7 @@ const COOKIES_DIR = path.join(process.cwd(), '..', 'cookies');
 const COOKIE_FILES = {
   xhs:     'cookies (6).json',
   weibo:   'cookies (7).json',
-  douyin:  'cookies (8).json',
+  douyin:  'cookies (19).json',
   netease: 'cookies (9).json',
   douban:  'cookies (10).json',
 };

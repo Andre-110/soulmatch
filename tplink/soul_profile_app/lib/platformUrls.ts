@@ -1,6 +1,6 @@
 /** Parse pasted profile URLs or raw IDs into canonical profile URLs (aligned with user-provided examples). */
 
-export type PlatformKey = 'weibo' | 'xhs' | 'douyin' | 'netease' | 'douban';
+export type PlatformKey = 'weibo' | 'xhs' | 'douyin' | 'netease' | 'douban' | 'zhihu';
 
 const CANON = {
   weibo: (id: string) => `https://weibo.com/u/${id}`,
@@ -9,6 +9,7 @@ const CANON = {
   douyin: (id: string) => `https://www.douyin.com/user/${id}`,
   netease: (id: string) => `https://music.163.com/#/user/home?id=${id}`,
   douban: (id: string) => `https://www.douban.com/people/${id}/`,
+  zhihu: (id: string) => `https://www.zhihu.com/people/${id}`,
 } as const;
 
 function extractDigitsSegment(s: string): string | null {
@@ -84,6 +85,14 @@ export function resolvePlatformUrl(
       const url = CANON.netease(id);
       return { ok: true, url, extractedId: id };
     }
+
+    if (lower.includes('zhihu.com')) {
+      const m = raw.match(/zhihu\.com\/people\/([^/?#]+)/i);
+      const id = m?.[1];
+      if (!id) return { ok: false, error: '无法从知乎链接中解析用户名（预期 …/people/…）' };
+      const url = CANON.zhihu(id);
+      return { ok: true, url, extractedId: id };
+    }
   } catch {
     /* fall through to raw-id */
   }
@@ -111,6 +120,40 @@ export function resolvePlatformUrl(
     if (!id) return { ok: false, error: '豆瓣 people 标识无效' };
     return { ok: true, url: CANON.douban(id), extractedId: id };
   }
+  if (platform === 'zhihu') {
+    const id = raw.replace(/^\/+|\/+$/g, '');
+    if (!id) return { ok: false, error: '知乎用户名不能为空' };
+    return { ok: true, url: CANON.zhihu(id), extractedId: id };
+  }
 
   return { ok: false, error: '未知平台' };
+}
+
+/**
+ * Playwright 截图用 URL：与建档 canonical 对齐。
+ * 小红书：24 位 hex 走个人主页，否则与建档一致走搜索页（keyword 不是 profile id）。
+ * 网易云：使用无 hash 直链，避免 SPA 在自动化里落到 404。
+ */
+export function screenshotTargetUrl(platform: PlatformKey, extractedId: string): string {
+  switch (platform) {
+    case 'weibo':
+      return `https://weibo.com/u/${extractedId}`;
+    case 'xhs':
+      if (/^[a-f0-9]{24}$/i.test(extractedId)) {
+        return `https://www.xiaohongshu.com/user/profile/${extractedId}`;
+      }
+      return CANON.xhs(extractedId);
+    case 'douyin':
+      return extractedId && extractedId !== 'self'
+        ? `https://www.douyin.com/user/${extractedId}`
+        : `https://www.douyin.com/user/self`;
+    case 'netease':
+      return `https://music.163.com/#/user/home?id=${encodeURIComponent(extractedId)}`;
+    case 'douban':
+      return `https://www.douban.com/people/${extractedId}/`;
+    case 'zhihu':
+      return `https://www.zhihu.com/people/${extractedId}`;
+    default:
+      return '';
+  }
 }

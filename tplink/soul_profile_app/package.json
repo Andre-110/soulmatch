@@ -5,8 +5,15 @@
   "scripts": {
     "dev": "bash scripts/dev.sh",
     "dev:plain": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "build": "next build --webpack",
+    "clean": "rm -rf .next",
+    "rebuild": "npm run clean && npm run build",
+    "start": "next start -H 0.0.0.0 -p 3010",
+    "db:studio": "prisma studio",
+    "db:recent": "npx tsx scripts/list-recent-profiles.ts",
+    "report:markdown": "npx tsx scripts/render-soul-report-markdown.ts",
+    "try:xhs-search": "npx tsx scripts/try-xhs-cookie-search.ts",
+    "try:douyin-search": "npx tsx scripts/try-douyin-cookie-search.ts",
     "lint": "eslint"
   },
   "dependencies": {

@@ -1,5 +1,8 @@
 import type { ScrapeOutcome } from '@/lib/profileScrape';
 import { scrapeOutcomeToDisplayName } from '@/lib/profileScrape';
+import type { SoulReportArticle } from '@/lib/soulReportArticle';
+import { isCompleteSoulReportArticle, stubArticleFromLegacy } from '@/lib/soulReportArticle';
+import { getSoulReportSystemPrompt } from '@/lib/soulReportPrompt';
 
 export type SoulReport = {
   mbti: string;
@@ -12,7 +15,10 @@ export type SoulReport = {
     title: string;
     description: string;
   }[];
+  /** 供卡片/首屏的浓缩总评（与 article 互补，勿与 article 逐字重复） */
   overall: string;
+  /** 与「全维度精准解码」长文模板对齐的结构化正文；缺失时由兜底或脚本从 blocks 生成 */
+  article?: SoulReportArticle;
 };
 
 function blockIcon(platform: string): string {
@@ -59,60 +65,19 @@ export function buildFallbackSoulReport(params: {
     });
   }
 
-  return {
-    mbti: '待模型',
-    title: '基于公开摘录与自述的初稿',
+  const mbti = '待模型';
+  const title = '基于公开摘录与自述的初稿';
+  const overall =
+    '以上内容来自程序尝试访问你提供的公开链接后的文本摘录，以及你在应用内填写的文字；并非官方平台背书。设置 OPENAI_API_KEY 后可将全部材料交给大模型生成更连贯的灵魂档案。';
+  const base: SoulReport = {
+    mbti,
+    title,
     avatarTags: ['多源线索', '线上人格'],
     blocks,
-    overall:
-      '以上内容来自程序尝试访问你提供的公开链接后的文本摘录，以及你在应用内填写的文字；并非官方平台背书。设置 OPENAI_API_KEY 后可将全部材料交给大模型生成更连贯的灵魂档案。',
+    overall,
   };
+  return { ...base, article: stubArticleFromLegacy(base) };
 }
-
-/** 灵魂档案主 prompt（与 tryOpenAISoulReport 中 system 消息一致；修改此处即可调整生成风格） */
-export const SOUL_REPORT_SYSTEM_PROMPT = `你是 SoulMatch 的灵魂档案分析师。SoulMatch 的核心理念是：一个人真正的人格，藏在他的行为数据里——深夜听什么歌、豆瓣标记什么书、微博转发什么、小红书收藏什么、抖音停留什么内容。你的任务是从这些真实的数字痕迹中，还原出这个人最深层的精神世界，为灵魂匹配提供依据。
-
-你会收到：
-1. 各平台公开文本（昵称、签名、简介、最近内容、听歌数、粉丝数等）
-2. 平台截图（每个已绑定平台尽量各有一张对应截图；有图时必须结合画面与文字一起分析：头像风格、内容偏好、审美取向、发布习惯）
-3. 用户自述文字
-
-你必须从以下六个维度深度推断（不是复述材料，是洞察）：
-① 能量模式：内向/外向？发布频率和内容密度说明什么？
-② 价值内核：从收藏、转发、签名里提炼他/她真正在乎什么
-③ 情感模式：文字风格透露什么依恋倾向？表达克制还是外放？
-④ 审美图谱：音乐、书影、视觉风格构成什么精神坐标？
-⑤ 边界感：公开内容的深浅和话题选择，透露对亲密关系的态度
-⑥ 潜在需求：在关系中最渴望被满足的是什么？
-
-规则：
-- 只根据材料推理，不编造没有的事实
-- 截图中可见的内容（界面、帖子、头像）直接作为材料引用
-- **硬性覆盖**：用户材料里每一个以「【平台名】」分段出现的绑定来源（微博、小红书、抖音、网易云音乐、豆瓣），都必须在 blocks 里出现**独立的一条**，不能只写三个平台概括其余；禁止用「社交平台汇总」「其他平台」合并多条。
-- 若某平台摘录为空或不可用：仍要单独占一个 block，source 写「平台名·数据不可用」，description 说明「该源未返回可读正文或需登录」，不要省略该平台条目。
-- 每个 block 的 description 尽量引用具体线索；材料实在为空时允许简短如实说明，禁止臆造详情。
-
-必须输出一个 JSON 对象（不要任何 markdown），字段严格如下：
-{
-  "mbti": "四个字母如 INFJ；信息不足时填单个减号 -",
-  "title": "10字以内诗意灵魂称号",
-  "avatarTags": ["3个精准短标签，体现深层人格而非表面爱好"],
-  "blocks": [
-    {
-      "source": "平台名·分析维度，如 网易云·情感图谱",
-      "icon": "单个 emoji",
-      "tags": ["1～2个深层标签"],
-      "title": "这条洞察的核心结论，10字以内",
-      "description": "120～250汉字。引用具体材料，给出深度人格推断，不要泛泛而谈。"
-    }
-  ],
-  "overall": "120～200汉字灵魂总评。像一封写给这个人的信，让他/她感受到被深度看见。结尾点出：什么样的人最可能与TA产生灵魂共振。"
-}
-
-blocks 数量必须等于材料中「【…】」平台分段的数量（通常 5 个：微博、小红书、抖音、网易云音乐、豆瓣；若材料里只有其中几项就只输出几项）。若材料中出现「【用户手传截图】」且张数大于 0，**必须再增加 1 个独立 block**：source 固定为「你上传的截图·视觉线索」，结合**本条消息后附带的用户手传图片**写 description（不得与本条文字材料中的平台摘录混淆；平台截图与用户手传图若为不同批次，以材料里的「多模态图片顺序」为准）。
-另可追加「用户自述」block（若有自述）。顺序建议：平台 block → 手传截图 block（若有）→ 自述（若有）。全程中文。温度要有，但不要矫情。`;
-
-const SYSTEM = SOUL_REPORT_SYSTEM_PROMPT;
 
 /**
  * 模型可能仍漏平台：按抓取结果逐项检查，缺则补上一条（避免用户绑了 5 个却只看见 3 块）。
@@ -164,53 +129,206 @@ export function ensureUserHandUploadBlock(report: SoulReport, userUploadCount: n
   return { ...report, blocks };
 }
 
+/** 单次 OpenAI 调用的通用封装，返回原始 JSON 字符串或 null */
+async function callOpenAI(
+  apiKey: string,
+  baseUrl: string,
+  model: string,
+  messages: Array<{ role: string; content: unknown }>,
+  maxTokens: number,
+  timeoutMs = 90_000,
+): Promise<string | null> {
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.78,
+        max_tokens: maxTokens,
+        response_format: { type: 'json_object' },
+        messages,
+      }),
+    });
+  } catch (e) {
+    console.error('[OpenAI] fetch 异常:', e instanceof Error ? e.message : String(e));
+    return null;
+  }
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    console.error(`[OpenAI] HTTP ${res.status}: ${errText.slice(0, 400)}`);
+    return null;
+  }
+
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+    error?: { message?: string };
+  };
+
+  if (data.error) {
+    console.error('[OpenAI] API 错误:', data.error.message);
+    return null;
+  }
+
+  const choice = data?.choices?.[0];
+  const raw = choice?.message?.content ?? null;
+  console.log(`[OpenAI] finish_reason=${choice?.finish_reason}, rawLen=${raw?.length ?? 0}`);
+  return raw;
+}
+
+/**
+ * 第二轮：视觉增强调用。
+ * 传入所有截图（每批最多 4 张），让模型输出每张截图对应的平台 key 与 description 补充。
+ * 返回 Map<平台key, 视觉描述文字> 或 null（失败时跳过，不影响主报告）。
+ */
+async function callVisionEnhancement(
+  apiKey: string,
+  baseUrl: string,
+  model: string,
+  platformKeys: string[],
+  screenshotDataUrls: string[],
+): Promise<Map<string, string> | null> {
+  if (screenshotDataUrls.length === 0) return null;
+
+  // 每批 2 张 + high detail：确保能读取中文截图里的小字
+  const BATCH = 2;
+  const allDescriptions = new Map<string, string>();
+
+  for (let start = 0; start < screenshotDataUrls.length; start += BATCH) {
+    const batchUrls = screenshotDataUrls.slice(start, start + BATCH);
+    const batchKeys = platformKeys.slice(start, start + BATCH);
+
+    const imageMessages = batchUrls.map((url) => ({
+      type: 'image_url' as const,
+      image_url: { url, detail: 'high' as const },  // high 保证能读出中文文字、数字
+    }));
+
+    // 构建 key→index 映射，以便模型按顺序对应
+    const keyList = batchKeys.map((k, i) => `图${i + 1}=${k}`).join('，');
+    const prompt =
+      `以下 ${batchKeys.length} 张截图对应平台（${keyList}）。\n` +
+      `请仔细阅读每张图中的所有可见文字（包括昵称、签名、粉丝数、关注数、帖子/回答标题片段、个人简介等），` +
+      `输出严格 JSON，格式：{${batchKeys.map((k) => `"${k}":"描述"`).join(',')}}\n` +
+      `每条描述 200～350 字：① 直接引用截图中可见的原文（昵称、数字、标题关键词）；` +
+      `② 描述内容风格与版式气质；③ 若截图是验证码/空白/404，则写"页面为验证码或无效页面"。` +
+      `禁止推测截图中看不到的信息。`;
+
+    const messages = [
+      { role: 'user', content: [{ type: 'text', text: prompt }, ...imageMessages] },
+    ];
+
+    console.log(`[OpenAI-Vision] 批次 ${Math.floor(start / BATCH) + 1}，平台: ${batchKeys.join(',')}`);
+    const raw = await callOpenAI(apiKey, baseUrl, model, messages, 4000, 60_000);
+    if (!raw) continue;
+
+    try {
+      const parsed = JSON.parse(raw) as Record<string, string>;
+      for (const [k, v] of Object.entries(parsed)) {
+        if (typeof v === 'string' && v.length > 20) allDescriptions.set(k, v);
+      }
+    } catch (e) {
+      console.error('[OpenAI-Vision] JSON 解析失败:', e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return allDescriptions.size > 0 ? allDescriptions : null;
+}
+
 export async function tryOpenAISoulReport(
   context: string,
   screenshotDataUrls: string[] = [],
+  /** 平台 key 列表，与 screenshotDataUrls 顺序对应（platformShotKeys[i] ↔ screenshotDataUrls[i]） */
+  platformShotKeys: string[] = [],
 ): Promise<SoulReport | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
-  // gpt-4o-mini 支持 vision；统一走 OPENAI_MODEL，未设置时默认 mini
+
   const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-
-  // 构建用户消息：文字 + 截图
-  const userContent: any[] = [
-    { type: 'text', text: context.slice(0, 20000) },
-    ...screenshotDataUrls.slice(0, 15).map((dataUrl) => ({
-      type: 'image_url',
-      image_url: { url: dataUrl, detail: 'low' },
-    })),
-  ];
-
   const baseUrl = (process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/+$/, '');
-  const res = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.55,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: SYSTEM },
-        { role: 'user', content: userContent },
-      ],
-    }),
-  });
 
-  if (!res.ok) return null;
-  const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const raw = data?.choices?.[0]?.message?.content;
-  if (!raw) return null;
+  const depthHint = [
+    '\n\n【本次生成 · 深度与文风双重硬性检查清单（逐项自核后输出）】\n',
+    '\n─ 结构指标 ─\n',
+    '① corePersonality pillars ≥2 个，每柱 bullets ≥2 条，每条 ≥80 字并含可核验细节（平台名/昵称/数字）；\n',
+    '② hobbies fixedGroups 两组合计 ≥6 条长句 bullet，禁止单词或短语；\n',
+    '③ speakingStyle detailBullets ≥4 条，每条 ≥50 字，须注明材料来源平台；\n',
+    '④ values dimensions 4 维各 ≥60 字，与材料行为挂钩；\n',
+    '⑤ 每位名人 evidence ≥120 字，必须写清「与用户材料的具体同构点」；\n',
+    '⑥ timeline ≥8 个时段，每段 paragraph ≥3 句完整中文，含具体时间/习惯/情绪/场景；\n',
+    '⑦ overall 200～450 汉字。\n',
+    '\n─ 文风指标（与「全网人格精准解码」特稿对齐）─\n',
+    '⑧ 禁止使用「善于社交、热爱生活、积极向上、情感细腻、富有创意」等万能套语；每个判断须对应材料中的昵称/数字/具体帖子/可见行为；\n',
+    '⑨ 每条 bullet 须有「材料支撑句」+ 「人格解读句」双层结构，例如：「你在小红书开帖用自己的邮箱替陌生人答疑（材料）→ 这是把「帮到别人」当成价值感来源的典型 ISFJ 底色（解读）」；\n',
+    '⑩ 整体语气接近非虚构特稿：有冲击力、有画面感、允许口语化短句，但绝不脱离材料脑补；\n',
+    '⑪ 若某平台材料极少，诚实说明「该平台仅有昵称/签名，无法深挖」，不以万能话填充。\n',
+    '\n以上任一不达标须在同一回复中补足，不得缩减。',
+  ].join('');
+
+  const textBody = `${context.slice(0, 20000)}${depthHint}`;
+
+  // ── 第一轮：纯文字调用，生成完整报告结构 ──────────────────────────────────
+  console.log(`[OpenAI] 第一轮（文字分析）model=${model}，contextLen=${textBody.length}`);
+  const round1Messages = [
+    { role: 'system', content: getSoulReportSystemPrompt() },
+    { role: 'user', content: textBody },
+  ];
+  const raw1 = await callOpenAI(apiKey, baseUrl, model, round1Messages, 14000, 90_000);
+  if (!raw1) return null;
+
+  let report: SoulReport;
   try {
-    const parsed = JSON.parse(raw) as SoulReport;
-    if (!parsed.blocks || !Array.isArray(parsed.blocks)) return null;
-    return parsed;
-  } catch {
+    const parsed = JSON.parse(raw1) as SoulReport;
+    if (!parsed.blocks || !Array.isArray(parsed.blocks)) {
+      console.error('[OpenAI] 第一轮响应缺少 blocks 字段');
+      return null;
+    }
+    report = parsed;
+  } catch (e) {
+    console.error('[OpenAI] 第一轮 JSON 解析失败:', e instanceof Error ? e.message : String(e), raw1.slice(0, 200));
     return null;
   }
+
+  // ── 第二轮：视觉增强（如有截图，全部传入，分批 low-detail 处理）──────────
+  if (screenshotDataUrls.length > 0) {
+    const keys = platformShotKeys.length === screenshotDataUrls.length
+      ? platformShotKeys
+      : screenshotDataUrls.map((_, i) => `platform_${i}`);
+
+    console.log(`[OpenAI] 第二轮（视觉增强），共 ${screenshotDataUrls.length} 张截图`);
+    const visionMap = await callVisionEnhancement(apiKey, baseUrl, model, keys, screenshotDataUrls);
+
+    if (visionMap && visionMap.size > 0) {
+      // 用视觉描述替换第一轮生成的 block description（视觉信息优先，更可靠）
+      report = {
+        ...report,
+        blocks: report.blocks.map((block) => {
+          for (const [key, vDesc] of visionMap.entries()) {
+            if (block.source.toLowerCase().includes(key.toLowerCase())) {
+              // 若视觉描述明确指出是验证码/无效页面，保留原 description
+              if (/验证码|无效页面|404|空白/.test(vDesc)) {
+                return block;
+              }
+              return {
+                ...block,
+                description: vDesc,   // 直接用视觉解读替换，更基于真实可见内容
+              };
+            }
+          }
+          return block;
+        }),
+      };
+      console.log(`[OpenAI] 视觉增强完成，命中平台: ${[...visionMap.keys()].join(', ')}`);
+    }
+  }
+
+  if (!isCompleteSoulReportArticle(report.article)) {
+    return { ...report, article: stubArticleFromLegacy(report) };
+  }
+  return report;
 }

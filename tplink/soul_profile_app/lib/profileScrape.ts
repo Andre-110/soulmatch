@@ -1,7 +1,9 @@
 import * as cheerio from 'cheerio';
 import type { PlatformKey } from '@/lib/platformUrls';
 import { getCookieHeader } from '@/lib/loadCookies';
-import { screenshotPlatformPage } from '@/lib/screenshotPlatform';
+import { screenshotMultiplePlatforms, type ScreenshotTask } from '@/lib/screenshotPlatformBatch';
+import { xhsSearchUsersAndProfileInfo } from '@/lib/xhsSearchProfile';
+import path from 'path';
 
 const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36';
@@ -13,6 +15,8 @@ export type ScrapeOutcome = {
   excerpt: string;
   method?: string;
   screenshotDataUrl?: string; // base64 PNG，用于 GPT-4o 视觉分析
+  /** 截图阶段应用的实际用户 ID（可能与建档录入的不同，如 xhs 搜索后的真实 profile id） */
+  screenshotId?: string;
 };
 
 const PUBLIC_LABEL: Record<PlatformKey, string> = {
@@ -21,6 +25,7 @@ const PUBLIC_LABEL: Record<PlatformKey, string> = {
   douyin: '抖音',
   netease: '网易云音乐',
   douban: '豆瓣',
+  zhihu: '知乎',
 };
 
 export function scrapeOutcomeToDisplayName(o: ScrapeOutcome): string {
@@ -44,6 +49,25 @@ async function fetchWithTimeout(
 function clip(s: string, n = 5500): string {
   const t = s.replace(/\s+/g, ' ').trim();
   return t.length <= n ? t : `${t.slice(0, n)}…`;
+}
+
+/** 截图兜底时写入报告的正文（用户可读，非内部占位符） */
+export const EXCERPT_SCREENSHOT_FALLBACK =
+  '已获取该主页截图，原站未返回可解析文字摘要；人设与动态请以模型对截图的综合解读为准。';
+
+function logScrape(platform: string, message: string, extra?: Record<string, unknown>) {
+  const tail = extra && Object.keys(extra).length ? ` ${JSON.stringify(extra)}` : '';
+  console.log(`[Scrape][${platform}] ${message}${tail}`);
+}
+
+/** 供 /api/analyze 等打一行摘要 */
+export function summarizeScrapesForLog(scrapes: ScrapeOutcome[]): string {
+  return scrapes
+    .map(
+      (o) =>
+        `${o.platform}:${o.ok ? 'ok' : 'fail'}/${o.method ?? '-'}/excerpt=${(o.excerpt || '').length}`,
+    )
+    .join(' | ');
 }
 
 /** 常见登录 / 空壳页，摘录过短则视为无效 */
@@ -131,6 +155,9 @@ export async function scrapeWeibo(uid: string, profileUrl: string): Promise<Scra
       `https://weibo.com/ajax/profile/info?uid=${encodeURIComponent(uid)}`,
       { headers: ajaxHeaders },
     );
+    if (!infoRes.ok) {
+      logScrape('weibo', 'ajax profile/info 失败', { status: infoRes.status, uid: String(uid).slice(0, 12) });
+    }
     if (infoRes.ok) {
       const infoData = (await infoRes.json()) as any;
       const u = infoData?.data?.user;
@@ -168,6 +195,70 @@ export async function scrapeWeibo(uid: string, profileUrl: string): Promise<Scra
 
 export async function scrapeDouban(peopleId: string, profileUrl: string): Promise<ScrapeOutcome> {
   const cookie = getCookieHeader('douban');
+
+  // 尝试 API 方式获取用户信息
+  try {
+    const apiUrl = `https://m.douban.com/rexxar/api/v2/user/${encodeURIComponent(peopleId)}`;
+    const res = await fetchWithTimeout(apiUrl, {
+      headers: {
+        'User-Agent': UA,
+        Referer: 'https://www.douban.com/',
+        Cookie: cookie,
+        Accept: 'application/json',
+      },
+    });
+
+    if (!res.ok) {
+      logScrape('douban', 'rexxar user API 失败', { status: res.status, peopleId: String(peopleId).slice(0, 16) });
+    }
+    if (res.ok) {
+      const data = (await res.json()) as any;
+      if (data?.name) {
+        const parts: string[] = [
+          `昵称：${data.name}`,
+          data.intro && `简介：${data.intro}`,
+          data.loc && data.loc.name && `地区：${data.loc.name}`,
+          data.reg_time && `注册时间：${data.reg_time}`,
+        ].filter(Boolean) as string[];
+
+        // 尝试获取用户的书影音数据
+        try {
+          const statusUrl = `https://m.douban.com/rexxar/api/v2/user/${encodeURIComponent(peopleId)}/interests?type=collect&count=5`;
+          const statusRes = await fetchWithTimeout(statusUrl, {
+            headers: {
+              'User-Agent': UA,
+              Referer: profileUrl,
+              Cookie: cookie,
+              Accept: 'application/json',
+            },
+          });
+          if (statusRes.ok) {
+            const statusData = (await statusRes.json()) as any;
+            const interests = statusData?.interests || [];
+            if (interests.length > 0) {
+              const items = interests.slice(0, 3).map((item: any) => {
+                const subject = item?.subject;
+                return subject?.title ? `${subject.title}（${subject.type || ''}）` : '';
+              }).filter(Boolean);
+              if (items.length) {
+                parts.push(`\n最近收藏：\n${items.join('\n')}`);
+              }
+            }
+          }
+        } catch { /* ignore */ }
+
+        return {
+          platform: 'douban',
+          url: profileUrl,
+          ok: true,
+          excerpt: clip(parts.join('\n')),
+          method: 'douban-api'
+        };
+      }
+    }
+  } catch { /* fall through */ }
+
+  // API 失败，回退到 HTML 抓取
   const { text, method } = await directThenReader(profileUrl, cookie);
   return {
     platform: 'douban',
@@ -179,102 +270,116 @@ export async function scrapeDouban(peopleId: string, profileUrl: string): Promis
 }
 
 export async function scrapeXhs(keyword: string, profileUrl: string): Promise<ScrapeOutcome> {
-  const cookie = getCookieHeader('xhs');
-  let excerpt = '';
-  let fromSearch = false;
-
+  // 使用新的搜索方法（通过浏览器自动化）
   try {
-    const searchUrl = `https://edith.xiaohongshu.com/api/sns/web/v1/search/notes?keyword=${encodeURIComponent(keyword)}&page=1&page_size=5&search_id=&sort=general&note_type=0`;
-    const res = await fetchWithTimeout(searchUrl, {
-      headers: {
-        'User-Agent': UA,
-        Referer: 'https://www.xiaohongshu.com/',
-        Cookie: cookie,
-        'Content-Type': 'application/json',
-        'x-sign': 'X1',
-      },
+    const { findCookieFilePath } = await import('@/lib/cookieFilePaths');
+    const cookiePath = findCookieFilePath('cookies (6).json');
+    if (!cookiePath) {
+      logScrape('xhs', 'Cookie 文件未找到 (cookies (6).json)');
+      throw new Error('xhs cookie not found');
+    }
+    const result = await xhsSearchUsersAndProfileInfo({
+      cookiePath,
+      keyword,
+      openFirstProfile: true,
+      headless: true,
     });
-    if (res.ok) {
-      const data = (await res.json()) as any;
-      const items: any[] = data?.data?.items ?? [];
-      if (items.length > 0) {
-        const parts = items.slice(0, 5).map((item: any) => {
-          const note = item?.note_card;
-          return `标题：${note?.display_title ?? ''}  作者：${note?.user?.nickname ?? ''}`;
-        }).filter(Boolean);
-        if (parts.length) {
-          excerpt = clip(parts.join('\n'));
-          fromSearch = true;
-        }
+
+    if (result.ok && result.profileExcerpt) {
+      // 从搜索结果里解析出真实 profile id（24 位 hex），供截图阶段使用正确的主页
+      let realProfileId: string | undefined;
+      if (result.profileUrl) {
+        const m = result.profileUrl.match(/\/user\/profile\/([a-f0-9]{24})/i);
+        if (m) realProfileId = m[1];
       }
+      return {
+        platform: 'xhs',
+        url: result.profileUrl || profileUrl,
+        ok: true,
+        excerpt: clip(result.profileExcerpt),
+        method: 'xhs-browser-search',
+        screenshotId: realProfileId,
+      };
     }
-  } catch {
-    /* fall through */
+  } catch (error) {
+    console.error('[XHS] 浏览器搜索失败:', error);
   }
 
-  let result: ScrapeOutcome;
-  if (fromSearch) {
-    result = { platform: 'xhs', url: profileUrl, ok: true, excerpt, method: 'xhs-search-api' };
-  } else {
-    result = {
-      platform: 'xhs',
-      url: profileUrl,
-      ok: false,
-      excerpt: '',
-      method: 'playwright-screenshot',
-    };
-  }
-
-  result = await attachPlatformScreenshot(result, 'xhs', keyword);
-
-  if (!fromSearch) {
-    if (result.screenshotDataUrl) {
-      result.ok = true;
-      result.excerpt = '[截图已获取，交由视觉模型分析]';
-    } else {
-      result.excerpt = '小红书：搜索与截图均未取得有效内容';
-      result.ok = false;
-    }
-  }
-
-  return result;
+  // 回退：标记为需要截图
+  return {
+    platform: 'xhs',
+    url: profileUrl,
+    ok: false,
+    excerpt: '',
+    method: 'pending-screenshot',
+  };
 }
 
 export async function scrapeDouyin(secUid: string, profileUrl: string): Promise<ScrapeOutcome> {
   const cookie = getCookieHeader('douyin');
-  const UA_MOBILE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
-  const headers = { 'User-Agent': UA_MOBILE, Referer: 'https://www.douyin.com/', Cookie: cookie, Accept: 'application/json' };
+  const hasCookie = cookie.length > 20;
+  if (!hasCookie) {
+    logScrape('douyin', 'Cookie 过短或缺失', { cookieLen: cookie.length });
+  }
 
-  // 优先用 web API 获取用户信息（可通过 sec_uid 查任意用户）
-  const apiUrl = secUid && secUid !== 'self'
-    ? `https://www.douyin.com/aweme/v1/web/user/profile/other/?sec_user_id=${encodeURIComponent(secUid)}&aid=6383&cookie_enabled=1`
-    : `https://www.douyin.com/aweme/v1/web/user/profile/self/?aid=6383&cookie_enabled=1`;
-  try {
-    const res = await fetchWithTimeout(apiUrl, { headers });
-    if (res.ok) {
-      const data = (await res.json()) as any;
-      const u = data?.user;
-      if (u?.nickname) {
-        const parts: string[] = [
-          `昵称：${u.nickname}`,
-          u.signature && `简介：${u.signature}`,
-          u.city && `城市：${u.city}`,
-          u.follower_count != null && `粉丝数：${u.follower_count}`,
-          u.following_count != null && `关注数：${u.following_count}`,
-          u.aweme_count != null && `作品数：${u.aweme_count}`,
-          u.total_favorited != null && `获赞数：${u.total_favorited}`,
-        ].filter(Boolean) as string[];
+  const UA_PC = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36';
+  const UA_MOBILE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+
+  /** 尝试从任意抖音 API 端点解析出用户信息，成功则返回 parts 数组 */
+  async function tryEndpoint(url: string, ua: string): Promise<string[] | null> {
+    try {
+      const res = await fetchWithTimeout(url, {
+        headers: { 'User-Agent': ua, Referer: 'https://www.douyin.com/', Cookie: cookie, Accept: 'application/json' },
+      });
+      const text = await res.text();
+      if (!res.ok) return null;
+      let data: any;
+      try { data = JSON.parse(text); } catch { return null; }
+      const u = data?.user ?? data?.data?.user ?? data?.user_info;
+      if (!u?.nickname) return null;
+      return [
+        `昵称：${u.nickname}`,
+        u.signature && `简介：${u.signature}`,
+        u.city && `城市：${u.city}`,
+        u.follower_count != null && `粉丝数：${u.follower_count}`,
+        u.following_count != null && `关注数：${u.following_count}`,
+        u.aweme_count != null && `作品数：${u.aweme_count}`,
+        u.total_favorited != null && `获赞数：${u.total_favorited}`,
+      ].filter(Boolean) as string[];
+    } catch {
+      return null;
+    }
+  }
+
+  if (secUid && secUid !== 'self') {
+    const endpoints = [
+      // 端点1：官方 web API（有时不需要签名）
+      [`https://www.douyin.com/aweme/v1/web/user/profile/other/?sec_user_id=${encodeURIComponent(secUid)}&aid=6383&cookie_enabled=1&msToken=`, UA_PC],
+      // 端点2：iesdouyin 旧版
+      [`https://www.iesdouyin.com/web/api/v2/user/info/?sec_uid=${encodeURIComponent(secUid)}`, UA_MOBILE],
+      // 端点3：不同 aid
+      [`https://www.douyin.com/aweme/v1/web/user/profile/other/?sec_user_id=${encodeURIComponent(secUid)}&aid=1128&cookie_enabled=1`, UA_PC],
+    ] as [string, string][];
+
+    for (const [url, ua] of endpoints) {
+      const parts = await tryEndpoint(url, ua);
+      if (parts) {
+        logScrape('douyin', 'API 成功', { endpoint: url.slice(0, 60) });
         return { platform: 'douyin', url: profileUrl, ok: true, excerpt: clip(parts.join('\n')), method: 'douyin-web-api' };
       }
     }
-  } catch { /* fall through */ }
-
-  // 回退：Playwright 截图
-  const shot = await screenshotPlatformPage('douyin', secUid);
-  if (shot.ok && shot.dataUrl) {
-    return { platform: 'douyin', url: profileUrl, ok: true, excerpt: '[截图已获取，交由视觉模型分析]', method: 'playwright-screenshot', screenshotDataUrl: shot.dataUrl };
+    logScrape('douyin', '所有 API 端点均失败，抖音网页需要签名参数，无法无头自动获取', { secUid: secUid.slice(0, 16) });
   }
-  return { platform: 'douyin', url: profileUrl, ok: false, excerpt: '抖音数据获取失败', method: 'none' };
+
+  // 不再回退 Playwright 截图（抖音无头模式必触发验证码）
+  // 返回明确失败，并给报告一条可用的说明文字
+  return {
+    platform: 'douyin',
+    url: profileUrl,
+    ok: false,
+    excerpt: '抖音主页需要签名验证或人机校验，服务端无法自动抓取。建议在"说说你自己"环节多写几句抖音内容描述，帮助档案更准确。',
+    method: 'no-api-access',
+  };
 }
 
 export async function scrapeNetease(uid: string, profileUrl: string): Promise<ScrapeOutcome> {
@@ -284,6 +389,9 @@ export async function scrapeNetease(uid: string, profileUrl: string): Promise<Sc
       `https://music.163.com/api/v1/user/detail/${encodeURIComponent(uid)}`,
       { headers: { 'User-Agent': UA, Referer: 'https://music.163.com/', Cookie: cookie } },
     );
+    if (!res.ok) {
+      logScrape('netease', 'user/detail API 失败', { status: res.status, uid: String(uid).slice(0, 12) });
+    }
     if (res.ok) {
       const data = (await res.json()) as any;
       const p = data?.profile;
@@ -307,6 +415,104 @@ export async function scrapeNetease(uid: string, profileUrl: string): Promise<Sc
   return { platform: 'netease', url: profileUrl, ok: text.length >= 40, excerpt: text, method };
 }
 
+export async function scrapeZhihu(urlToken: string, profileUrl: string): Promise<ScrapeOutcome> {
+  const cookie = getCookieHeader('zhihu');
+  if (cookie.length < 20) {
+    logScrape('zhihu', 'Cookie 过短或缺失，API 可能失败', { cookieLen: cookie.length });
+  }
+
+  try {
+    const apiUrl = `https://www.zhihu.com/api/v4/members/${encodeURIComponent(urlToken)}?include=headline,answer_count,articles_count,follower_count,voteup_count,thanked_count,favorited_count`;
+    const res = await fetchWithTimeout(apiUrl, {
+      headers: {
+        'User-Agent': UA,
+        Referer: 'https://www.zhihu.com/',
+        Cookie: cookie,
+        Accept: 'application/json',
+        'x-requested-with': 'fetch',
+      },
+    });
+
+    if (!res.ok) {
+      const snippet = await res.text().then((t) => t.slice(0, 260)).catch(() => '');
+      logScrape('zhihu', 'members API HTTP 失败', { status: res.status, snippet });
+    } else {
+      const data = (await res.json()) as any;
+      if (data?.error) {
+        logScrape('zhihu', 'members API JSON 含 error', { message: data.error?.message, code: data.error?.code });
+      } else if (data?.name) {
+        const parts: string[] = [
+          `昵称：${data.name}`,
+          data.headline && `一句话介绍：${data.headline}`,
+          data.description && `个人简介：${data.description}`,
+          data.answer_count != null && `回答数：${data.answer_count}`,
+          data.articles_count != null && `文章数：${data.articles_count}`,
+          data.follower_count != null && `关注者：${data.follower_count}`,
+          data.voteup_count != null && `获赞数：${data.voteup_count}`,
+        ].filter(Boolean) as string[];
+
+        try {
+          const activitiesUrl = `https://www.zhihu.com/api/v4/members/${encodeURIComponent(urlToken)}/activities?limit=5&after_id=0`;
+          const actRes = await fetchWithTimeout(activitiesUrl, {
+            headers: {
+              'User-Agent': UA,
+              Referer: profileUrl,
+              Cookie: cookie,
+              Accept: 'application/json',
+            },
+          });
+          if (!actRes.ok) {
+            logScrape('zhihu', 'activities API 失败', { status: actRes.status });
+          } else if (actRes.ok) {
+            const actData = (await actRes.json()) as any;
+            const activities = actData?.data || [];
+            if (activities.length > 0) {
+              const items = activities.slice(0, 3).map((act: any) => {
+                const target = act?.target;
+                if (target?.question?.title) {
+                  return `回答了：${target.question.title}`;
+                } else if (target?.title) {
+                  return `发表了：${target.title}`;
+                }
+                return '';
+              }).filter(Boolean);
+              if (items.length) {
+                parts.push(`\n最近动态：\n${items.join('\n')}`);
+              }
+            }
+          }
+        } catch (e) {
+          logScrape('zhihu', 'activities 请求异常', { err: e instanceof Error ? e.message : String(e) });
+        }
+
+        logScrape('zhihu', 'members API 成功', { method: 'zhihu-api' });
+        return {
+          platform: 'zhihu',
+          url: profileUrl,
+          ok: true,
+          excerpt: clip(parts.join('\n')),
+          method: 'zhihu-api',
+        };
+      } else {
+        logScrape('zhihu', 'members API 200 但缺少 name', { keys: Object.keys(data || {}).slice(0, 12) });
+      }
+    }
+  } catch (e) {
+    logScrape('zhihu', 'members API 异常', { err: e instanceof Error ? e.message : String(e) });
+  }
+
+  const { text, method } = await directThenReader(profileUrl, cookie);
+  const ok = text.length >= 40;
+  logScrape('zhihu', 'HTML/Reader 回退', { method, textLen: text.length, ok });
+  return {
+    platform: 'zhihu',
+    url: profileUrl,
+    ok,
+    excerpt: text,
+    method,
+  };
+}
+
 type UploadRow = { type: string; content: string | null };
 
 function parsePlatformPayload(content: string): { url: string; extractedId: string } | null {
@@ -320,35 +526,30 @@ function parsePlatformPayload(content: string): { url: string; extractedId: stri
   return null;
 }
 
-/**
- * 每个绑定平台都尽量附带 Playwright 截图（供多模态模型）。
- * 先完成文字/API 抓取，再截图，避免与 fetch 抢资源；失败则等待后重试一次。
- */
-async function attachPlatformScreenshot(
-  result: ScrapeOutcome,
-  platform: PlatformKey,
-  extractedId: string,
-): Promise<ScrapeOutcome> {
-  let shot = await screenshotPlatformPage(platform, extractedId);
-  if (!shot.ok || !shot.dataUrl) {
-    await new Promise((r) => setTimeout(r, 1500));
-    shot = await screenshotPlatformPage(platform, extractedId);
-  }
-  if (shot.ok && shot.dataUrl) {
-    result.screenshotDataUrl = shot.dataUrl;
-  }
-  return result;
-}
+// 智能截图策略：只对视觉依赖强的平台截图
+const SCREENSHOT_PRIORITY: Record<PlatformKey, 'required' | 'optional' | 'skip'> = {
+  xhs: 'required',      // 小红书视觉为主，必须截图
+  douyin: 'skip',       // 抖音无头模式必触发验证码，截图无意义，直接跳过
+  weibo: 'required',    // 微博 - 截图
+  douban: 'required',   // 豆瓣 - 截图
+  netease: 'required',  // 网易云 - 截图
+  zhihu: 'required',    // 知乎 - 截图
+};
 
-/** 文字抓取完成后附截图（顺序执行 + 重试，保证各平台尽量有图） */
-async function withScreenshot(outcome: Promise<ScrapeOutcome>, platform: PlatformKey, extractedId: string): Promise<ScrapeOutcome> {
-  const result = await outcome;
-  return attachPlatformScreenshot(result, platform, extractedId);
+function shouldScreenshot(platform: PlatformKey, hasApiData: boolean): boolean {
+  const priority = SCREENSHOT_PRIORITY[platform];
+  if (priority === 'required') return true;
+  if (priority === 'skip') return false;
+  // optional: 只在 API 数据不足时截图
+  return !hasApiData;
 }
 
 export async function scrapeFromPlatformUploads(uploads: UploadRow[]): Promise<ScrapeOutcome[]> {
-  const jobs: Promise<ScrapeOutcome>[] = [];
+  const results: ScrapeOutcome[] = [];
+  const screenshotTasks: ScreenshotTask[] = [];
 
+  // 阶段 1：串行执行所有 API 抓取（不启动浏览器）
+  console.log('[Scrape] 开始 API 抓取阶段...');
   for (const row of uploads) {
     if (!row.content || !row.type.startsWith('platform:')) continue;
     const platform = row.type.slice('platform:'.length) as PlatformKey;
@@ -357,26 +558,94 @@ export async function scrapeFromPlatformUploads(uploads: UploadRow[]): Promise<S
 
     const { url, extractedId } = payload;
 
+    let result: ScrapeOutcome | null = null;
+
     switch (platform) {
       case 'weibo':
-        jobs.push(withScreenshot(scrapeWeibo(extractedId || url.replace(/.*\/u\//, '').replace(/\D.*$/, '') || '', url), 'weibo', extractedId));
+        result = await scrapeWeibo(extractedId || url.replace(/.*\/u\//, '').replace(/\D.*$/, '') || '', url);
         break;
       case 'douban':
-        jobs.push(withScreenshot(scrapeDouban(extractedId, url), 'douban', extractedId));
+        result = await scrapeDouban(extractedId, url);
         break;
       case 'xhs':
-        jobs.push(scrapeXhs(extractedId, url)); // XHS 已内置截图
+        result = await scrapeXhs(extractedId, url);
         break;
       case 'douyin':
-        jobs.push(withScreenshot(scrapeDouyin(extractedId, url), 'douyin', extractedId));
+        result = await scrapeDouyin(extractedId, url);
         break;
       case 'netease':
-        jobs.push(withScreenshot(scrapeNetease(extractedId, url), 'netease', extractedId));
+        result = await scrapeNetease(extractedId, url);
+        break;
+      case 'zhihu':
+        result = await scrapeZhihu(extractedId, url);
         break;
       default:
-        break;
+        continue;
+    }
+
+    if (result) {
+      results.push(result);
+
+      const hasApiData = result.ok && result.excerpt.length > 100;
+      const willScreenshot = shouldScreenshot(platform, hasApiData);
+      // 优先用 API 阶段找到的真实用户 ID（如 xhs 搜索结果），否则用原始录入 ID
+      const shotId = result.screenshotId || extractedId;
+      logScrape(platform, 'API 阶段结束', {
+        ok: result.ok,
+        method: result.method,
+        excerptLen: result.excerpt.length,
+        willScreenshot,
+        shotId: shotId !== extractedId ? shotId : undefined,
+      });
+      if (willScreenshot) {
+        screenshotTasks.push({ platform, extractedId: shotId });
+      }
     }
   }
 
-  return Promise.all(jobs);
+  // 阶段 2：批量截图（复用浏览器实例，串行执行）
+  if (screenshotTasks.length > 0) {
+    console.log(`[Scrape] 开始截图阶段，共 ${screenshotTasks.length} 个任务...`);
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const screenshotDir = path.join(process.cwd(), 'public', 'debug-screenshots', `analysis_${timestamp}`);
+
+    let screenshots: Map<PlatformKey, import('@/lib/screenshotPlatformBatch').ScreenshotResult>;
+    try {
+      screenshots = await screenshotMultiplePlatforms(screenshotTasks, screenshotDir);
+    } catch (e: any) {
+      console.error('[Scrape] 截图阶段整体异常，跳过截图:', e?.message ?? e);
+      screenshots = new Map();
+    }
+
+    // 将截图结果合并回去
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const shot = screenshots.get(result.platform);
+
+      if (shot?.ok && shot.dataUrl) {
+        result.screenshotDataUrl = shot.dataUrl;
+
+        // 如果之前 API 失败，现在有截图了，更新状态
+        if (!result.ok || result.method === 'pending-screenshot') {
+          const wasPending = result.method === 'pending-screenshot';
+          result.ok = true;
+          result.excerpt = EXCERPT_SCREENSHOT_FALLBACK;
+          result.method = 'playwright-screenshot';
+          logScrape(result.platform, '截图成功，已用截图兜底正文', { wasPending });
+        }
+      } else if (result.method === 'pending-screenshot') {
+        result.ok = false;
+        const label = PUBLIC_LABEL[result.platform] || result.platform;
+        result.excerpt = `${label}：截图失败或 Cookie 无效，无法展示主页（${shot?.error ?? '无截图数据'}）`;
+        result.method = 'none';
+        logScrape(result.platform, '截图阶段失败（此前 API/HTML 也未拿到正文）', {
+          error: shot?.error ?? 'no result',
+        });
+      }
+    }
+  }
+
+  console.log(`[Scrape] 完成，共 ${results.length} 个平台，${screenshotTasks.length} 个截图任务 | ${summarizeScrapesForLog(results)}`);
+  return results;
 }
