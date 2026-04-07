@@ -33,6 +33,13 @@ npm-debug.log*
 **/cookies/
 *.zip
 *.csv
+*.tar.gz
+
+# 本地素材解压目录 / 中间导出物
+MBTI场景图片/
+MBTI基础形象/
+__MACOSX/
+temp_mbti/
 
 # 本地虚拟环境
 tplink/.venv-screenshot/
