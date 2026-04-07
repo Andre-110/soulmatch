@@ -97,10 +97,11 @@ type Props = {
         celebrities?: Array<{
           order: number;
           name: string;
-          angle: string;
-          evidence: string;
+          similarityScore?: number;
+          recommendReason?: string;
+          angle?: string;
+          evidence?: string;
         }>;
-        bestPick?: { name: string; summary: string };
       };
     };
   };
@@ -334,7 +335,11 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, matchI
                           🌟
                         </div>
                         <div className="ref-rp-celeb-name">{c.name}</div>
-                        <div className="ref-rp-celeb-desc">{c.angle}</div>
+                        <div className="ref-rp-celeb-desc">
+                          {Number.isFinite(c.similarityScore)
+                            ? `${c.similarityScore}分｜${c.recommendReason || '同频'}`
+                            : (c.angle || '同频')}
+                        </div>
                       </div>
                     ))}
                   </div>

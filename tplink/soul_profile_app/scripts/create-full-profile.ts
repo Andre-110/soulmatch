@@ -91,13 +91,32 @@ async function main() {
   console.log(`Article: ${report.article ? 'YES' : 'NO'}`);
 
   if (report.article) {
+    const articleAny = report.article as any;
+    const legacyTimelineLen = Array.isArray(articleAny?.section3?.timeline)
+      ? articleAny.section3.timeline.length
+      : 0;
+    const dayPartsLen = Array.isArray(articleAny?.section4?.dayParts)
+      ? articleAny.section4.dayParts.length
+      : 0;
     console.log(`\nArticle structure:`);
     console.log(`  Headline: ${report.article.headline}`);
-    console.log(`  Section 1: ${report.article.section1.sectionTitle}`);
-    console.log(`  Section 2: ${report.article.section2.sectionTitle}`);
-    console.log(`  Section 3: ${report.article.section3.sectionTitle}`);
+    if (articleAny?.section1?.sectionTitle) {
+      console.log(`  Section 1: ${articleAny.section1.sectionTitle}`);
+    }
+    if (articleAny?.section2?.sectionTitle) {
+      console.log(`  Section 2: ${articleAny.section2.sectionTitle}`);
+    }
+    if (articleAny?.section3?.sectionTitle) {
+      console.log(`  Section 3: ${articleAny.section3.sectionTitle}`);
+    }
+    if (articleAny?.section4?.sectionTitle) {
+      console.log(`  Section 4: ${articleAny.section4.sectionTitle}`);
+    }
     console.log(`  Celebrities: ${report.article.section2.celebrities.length}`);
-    console.log(`  Timeline: ${report.article.section3.timeline.length} entries`);
+    console.log(`  Timeline(dayParts): ${dayPartsLen} entries`);
+    if (legacyTimelineLen > 0) {
+      console.log(`  Timeline(legacy): ${legacyTimelineLen} entries`);
+    }
   }
 
   await prisma.$disconnect();

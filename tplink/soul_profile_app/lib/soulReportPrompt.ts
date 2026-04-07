@@ -14,7 +14,7 @@ function buildSoulReportSystemPrompt(): string {
     '【输出契约】只输出一个 JSON 对象（不要 markdown 代码块）。根对象必须严格具备下列键与嵌套结构；字段含义见上文「写作指令」。',
     contract.trim(),
     '',
-    '硬约束：celebrities 数组长度必须 = 3；timeline 数组长度 ≥ 8；全程中文。',
+    '硬约束：celebrities 数组长度必须 = 3；section4.dayParts 数组长度必须 = 6；全程中文。',
   ].join('\n');
 }
 

@@ -291,18 +291,27 @@ function assessReportQuality(report: SoulReport, scrapes: ScrapeOutcome[]): { ok
   if (!isCompleteSoulReportArticle(article)) {
     reasons.push('article 结构不完整');
   } else {
-    const pillarCount = article.section1?.corePersonality?.pillars?.length ?? 0;
-    if (pillarCount < 2) reasons.push('corePersonality 柱数量不足');
+    const badCelebrity = article.section2.celebrities.find(
+      (c) =>
+        !Number.isFinite(c.similarityScore) ||
+        c.similarityScore < 1 ||
+        c.similarityScore > 10 ||
+        (c.recommendReason || '').trim().length > 10,
+    );
+    if (badCelebrity) reasons.push('section2 评分或推荐原因格式不符');
 
-    const bulletCount = article.section1.corePersonality.pillars
-      .reduce((n, p) => n + (Array.isArray(p.bullets) ? p.bullets.length : 0), 0);
-    if (bulletCount < 4) reasons.push('corePersonality bullets 过少');
-
-    const shortEvidence = article.section2.celebrities.filter((c) => (c.evidence || '').length < 90);
-    if (shortEvidence.length > 0) reasons.push('名人 evidence 偏短');
-
-    const shortTimeline = article.section3.timeline.filter((x) => (x.paragraph || '').length < 60);
-    if (shortTimeline.length > 2) reasons.push('timeline 细节密度不足');
+    const parts = Array.isArray(article.section4?.dayParts) ? article.section4.dayParts : [];
+    if (parts.length !== 6) reasons.push('section4 dayParts 数量不为 6');
+    const expectedSlots = ['晨起', '独处', '午餐', '工作', '玩耍', '阅读'];
+    for (const slot of expectedSlots) {
+      if (!parts.some((p) => p.slot === slot)) reasons.push(`section4 缺少时段：${slot}`);
+    }
+    const weakPart = parts.find(
+      (p) =>
+        (p.paragraph || '').trim().length < 35 ||
+        !String(p.sourceTag || '').includes('#'),
+    );
+    if (weakPart) reasons.push('section4 场景细节或来源标签不足');
   }
 
   return { ok: reasons.length === 0, reasons };
@@ -420,19 +429,18 @@ export async function tryOpenAISoulReport(
   const depthHint = [
     '\n\n【本次生成 · 深度与文风双重硬性检查清单（逐项自核后输出）】\n',
     '\n─ 结构指标 ─\n',
-    '① corePersonality pillars ≥2 个，每柱 bullets ≥2 条，每条 ≥80 字并含可核验细节（平台名/昵称/数字）；\n',
-    '② hobbies fixedGroups 两组合计 ≥6 条长句 bullet，禁止单词或短语；\n',
-    '③ speakingStyle detailBullets ≥4 条，每条 ≥50 字，须注明材料来源平台；\n',
-    '④ values dimensions 4 维各 ≥60 字，与材料行为挂钩；\n',
-    '⑤ 每位名人 evidence ≥120 字，必须写清「与用户材料的具体同构点」；\n',
-    '⑥ timeline ≥8 个时段，每段 paragraph ≥3 句完整中文，含具体时间/习惯/情绪/场景；\n',
-    '⑦ overall 200～450 汉字。\n',
+    '① section2 恰好 3 位名人，每位 similarityScore 为 1~10 整数；\n',
+    '② section2 每位 recommendReason 必须 ≤10 字，简短好懂；\n',
+    '③ section3 七项人格测试齐全，每项说明尽量 10 字内；\n',
+    '④ section4 必须固定 6 段：晨起/独处/午餐/工作/玩耍/阅读；\n',
+    '⑤ section4 每段必须带 sourceTag（#标签#）与 detailTags；\n',
+    '⑥ 晨起段必须出现具体歌曲名并带 #网易云音乐# 来源；\n',
+    '⑦ overall 220～420 汉字，必须含具体细节与 #标签#。\n',
     '\n─ 文风指标（与「全网人格精准解码」特稿对齐）─\n',
-    '⑧ 禁止使用「善于社交、热爱生活、积极向上、情感细腻、富有创意」等万能套语；每个判断须对应材料中的昵称/数字/具体帖子/可见行为；\n',
-    '⑨ 每条 bullet 须有「材料支撑句」+ 「人格解读句」双层结构，例如：「你在小红书开帖用自己的邮箱替陌生人答疑（材料）→ 这是把「帮到别人」当成价值感来源的典型 ISFJ 底色（解读）」；\n',
-    '⑩ 整体语气接近非虚构特稿：有冲击力、有画面感、允许口语化短句，但绝不脱离材料脑补；\n',
-    '⑪ 若某平台材料极少，诚实说明「该平台仅有昵称/签名，无法深挖」，不以万能话填充。\n',
-    '⑫ 若上文【小红书】等平台「正文摘录」非空，对应 block 必须基于摘录撰写，禁止写「抓取失败」「未连接服务器」「无法连接」等；仅摘录为空时才可说明不可用。\n',
+    '⑧ 语气改为 00 后可读的轻松诙谐表达，但必须建立在证据上；\n',
+    '⑨ 禁止使用「善于社交、热爱生活、积极向上」等万能套语；\n',
+    '⑩ 若某平台材料极少，诚实说明，不得硬编；\n',
+    '⑪ 若截图出现旅行/美食/场景细节，必须提取到 overall 与 section4 标签中。\n',
     '\n以上任一不达标须在同一回复中补足，不得缩减。',
   ].join('');
 

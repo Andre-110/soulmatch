@@ -5,96 +5,75 @@ function esc(s: string): string {
   return s.replace(/\r\n/g, '\n');
 }
 
-/** 将结构化报告转为与产品示例一致的 Markdown 长文（无 article 时从 blocks+overall 兜底）。 */
+function renderLegacyArticle(a: any): string {
+  const lines: string[] = [];
+  lines.push(`# ${esc(a.headline || '人格报告')}`);
+  lines.push('');
+  lines.push(esc(a.guaranteeIntro || ''));
+  lines.push('');
+  lines.push(`## ${esc(a.section2?.sectionTitle || '二、名人匹配')}`);
+  lines.push('');
+  const celebrities = Array.isArray(a.section2?.celebrities) ? a.section2.celebrities : [];
+  for (const c of celebrities) {
+    lines.push(`- ${esc(c.name || '—')}：${esc(c.angle || '匹配')}`);
+  }
+  lines.push('');
+  lines.push(`## ${esc(a.section3?.sectionTitle || '三、分身的一天')}`);
+  lines.push('');
+  const timeline = Array.isArray(a.section3?.timeline) ? a.section3.timeline : [];
+  for (const row of timeline) {
+    lines.push(`- ${esc(row.clock || '--:--')} ${esc(row.paragraph || '')}`);
+  }
+  return lines.join('\n').trim() + '\n';
+}
+
+/** 将结构化报告转为 Markdown；新结构优先，历史结构走兼容渲染。 */
 export function renderSoulReportToMarkdown(report: SoulReport): string {
   const article = report.article ?? stubArticleFromLegacy(report);
-  const a = article;
+  const a: any = article;
+
+  if (a.section1 && a.section3?.timeline) {
+    return renderLegacyArticle(a);
+  }
+
   const lines: string[] = [];
-
-  lines.push(`# ${esc(a.headline)}`);
+  lines.push(`# ${esc(a.headline || '人格报告')}`);
   lines.push('');
-  lines.push(esc(a.guaranteeIntro));
+  lines.push(esc(a.guaranteeIntro || ''));
   lines.push('');
-  lines.push('---');
-  lines.push('');
-  lines.push(`## ${esc(a.section1.sectionTitle)}`);
-  lines.push('');
-  lines.push(`### ${esc(a.section1.corePersonality.heading)}`);
-  lines.push('#### 实锤细节支撑：');
-  lines.push('');
-  let pIdx = 1;
-  for (const pillar of a.section1.corePersonality.pillars) {
-    lines.push(`${pIdx}.  **${esc(pillar.label)}**`);
-    for (const b of pillar.bullets) {
-      lines.push(`    - ${esc(b)}`);
-    }
-    lines.push('');
-    pIdx++;
-  }
-
-  lines.push(`### ${esc(a.section1.hobbies.heading)}`);
-  let hIdx = 1;
-  for (const g of a.section1.hobbies.fixedGroups) {
-    lines.push(`${hIdx}.  **${esc(g.groupTitle)}**`);
-    for (const b of g.bullets) {
-      lines.push(`    - ${esc(b)}`);
-    }
-    lines.push('');
-    hIdx++;
-  }
-  if (a.section1.hobbies.casualBullets.length) {
-    lines.push(`${hIdx}.  **日常休闲与延伸**`);
-    for (const b of a.section1.hobbies.casualBullets) {
-      lines.push(`    - ${esc(b)}`);
-    }
-    lines.push('');
-  }
-
-  lines.push(`### ${esc(a.section1.speakingStyle.heading)}`);
-  if (a.section1.speakingStyle.evidenceNote) {
-    lines.push(`#### ${esc(a.section1.speakingStyle.evidenceNote)}`);
-    lines.push('');
-  }
-  lines.push(`1.  **核心调性**：${esc(a.section1.speakingStyle.coreTone)}`);
-  lines.push('2.  **专属表达细节**');
-  for (const b of a.section1.speakingStyle.detailBullets) {
-    lines.push(`    - ${esc(b)}`);
-  }
+  lines.push(`## ${esc(a.section2?.sectionTitle || '二、和你灵魂高度契合的3位名人')}`);
   lines.push('');
 
-  lines.push(`### ${esc(a.section1.values.heading)}`);
-  let vIdx = 1;
-  for (const d of a.section1.values.dimensions) {
-    lines.push(`${vIdx}.  **${esc(d.label)}**：${esc(d.content)}`);
-    vIdx++;
+  const celebrities = Array.isArray(a.section2?.celebrities) ? a.section2.celebrities : [];
+  for (const c of celebrities.sort((x: any, y: any) => (x.order || 0) - (y.order || 0))) {
+    lines.push(
+      `- ${esc(c.name || '—')}｜${Number(c.similarityScore || 0)}分｜${esc(c.recommendReason || '')}`,
+    );
   }
+  lines.push('');
+  lines.push(`## ${esc(a.section3?.sectionTitle || '三、多维人格测试')}`);
+  lines.push('');
+  lines.push(`- 四液学说：${esc(a.section3?.fourHumorTheory?.type || '')}｜${esc(a.section3?.fourHumorTheory?.note || '')}`);
+  lines.push(`- 16型恋爱人格：${esc(a.section3?.lovePersona16?.type || '')}｜${esc(a.section3?.lovePersona16?.note || '')}`);
+  lines.push(`- 动物人格：${esc(a.section3?.animalPersona?.type || '')}｜${esc(a.section3?.animalPersona?.note || '')}`);
+  lines.push(`- 今日运势：爱情 ${esc(a.section3?.todayFortune?.love || '')}，事业 ${esc(a.section3?.todayFortune?.career || '')}，财运 ${esc(a.section3?.todayFortune?.wealth || '')}`);
+  lines.push(`- 五型人格：${esc(a.section3?.fiveFactorPersona?.type || '')}｜${esc(a.section3?.fiveFactorPersona?.note || '')}`);
+  lines.push(`- 水果人格：${esc(a.section3?.fruitPersona?.type || '')}｜${esc(a.section3?.fruitPersona?.note || '')}`);
+  lines.push(`- 饮品人格：${esc(a.section3?.drinkPersona?.type || '')}｜${esc(a.section3?.drinkPersona?.note || '')}`);
+  lines.push('');
+  lines.push(`## ${esc(a.section4?.sectionTitle || '四、你的AI分身的一天')}`);
+  lines.push('');
+  lines.push(`### ${esc(a.section4?.personaName || '数字分身')}`);
+  lines.push(esc(a.section4?.personaCore || ''));
   lines.push('');
 
-  const ord = ['一', '二', '三'];
-  lines.push(`## ${esc(a.section2.sectionTitle)}`);
-  lines.push('');
-  for (const c of [...a.section2.celebrities].sort((x, y) => x.order - y.order)) {
-    const label = ord[c.order - 1] ?? String(c.order);
-    lines.push(`### ${c.order}. 第${label}位：${esc(c.name)}（${esc(c.angle)}）`);
-    lines.push(`- 贴合实锤：${esc(c.evidence)}`);
-    lines.push('');
-  }
-  lines.push(`#### ✅ 最适合你的名人：${esc(a.section2.bestPick.name)}`);
-  lines.push('');
-  lines.push(esc(a.section2.bestPick.summary));
-  lines.push('');
-  lines.push('---');
-  lines.push('');
-  lines.push(`## ${esc(a.section3.sectionTitle)}`);
-  lines.push('');
-  lines.push('### 分身核心设定：');
-  lines.push('');
-  lines.push(esc(a.section3.personaCore));
-  lines.push('');
-  lines.push(`#### 【${esc(a.section3.personaName)}的完整一天】`);
-  lines.push('');
-  for (const row of a.section3.timeline) {
-    lines.push(`${esc(row.clock)} ${esc(row.paragraph)}`);
+  const dayParts = Array.isArray(a.section4?.dayParts) ? a.section4.dayParts : [];
+  for (const part of dayParts.sort((x: any, y: any) => (x.order || 0) - (y.order || 0))) {
+    lines.push(`- ${esc(part.clock || '--:--')} ${esc(part.slot || '')}`);
+    lines.push(`  ${esc(part.paragraph || '')}`);
+    lines.push(`  来源：${esc(part.sourceTag || '')}`);
+    const tags = Array.isArray(part.detailTags) ? part.detailTags.join(' ') : '';
+    if (tags) lines.push(`  标签：${esc(tags)}`);
     lines.push('');
   }
 
