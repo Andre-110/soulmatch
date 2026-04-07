@@ -4,7 +4,8 @@
  import { useRouter } from 'next/navigation';
 import html2canvas from 'html2canvas';
 import './globals.css';
-import { resolvePlatformUrl, type PlatformKey } from '@/lib/platformUrls';
+ import { resolvePlatformUrl, type PlatformKey } from '@/lib/platformUrls';
+ import { ANALYZE_STAGE_KEYS, type AnalyzeStageKey } from '@/lib/analyzeStages';
 import { SoulReportRef } from '@/components/SoulReportRef';
 import { APP_BASE_PATH } from '@/lib/appBasePath';
 
@@ -64,25 +65,31 @@ async function readAnalyzeNdjsonStream(res: Response): Promise<{
   return done;
 }
 
-type AnalyzeStageKey =
-  | 'queued'
-  | 'gathering'
-  | 'scraping'
-  | 'vision'
-  | 'prompting'
-  | 'saving'
-  | 'done';
-
 type AnalyzeStageEvent = {
   type: 'stage';
   stage: AnalyzeStageKey;
   message?: string;
 };
 
+type AnalyzeStageDurationEvent = {
+  type: 'stageDuration';
+  stage: AnalyzeStageKey;
+  durationMs: number;
+  aggregated: {
+    avgMs: number;
+    count: number;
+    maxMs: number;
+    lastMs: number;
+  };
+};
+
+type StageTimelineEntry = AnalyzeStageDurationEvent & { timestamp: number };
+
 async function readAnalyzeNdjsonStreamWithEvents(
   res: Response,
   options?: {
     onStage?: (event: AnalyzeStageEvent) => void;
+    onStageDuration?: (event: AnalyzeStageDurationEvent) => void;
   },
 ): Promise<{
   report: unknown;
@@ -111,9 +118,25 @@ async function readAnalyzeNdjsonStreamWithEvents(
       report?: unknown;
       userScreenshotUrls?: string[];
       mbtiIp?: unknown;
+      durationMs?: number;
+      aggregated?: {
+        avgMs: number;
+        count: number;
+        maxMs: number;
+        lastMs: number;
+      };
     };
     if (j.type === 'stage' && j.stage) {
       options?.onStage?.({ type: 'stage', stage: j.stage, message: j.message });
+      return;
+    }
+    if (j.type === 'stageDuration' && j.stage && typeof j.durationMs === 'number' && j.aggregated) {
+      options?.onStageDuration?.({
+        type: 'stageDuration',
+        stage: j.stage,
+        durationMs: j.durationMs,
+        aggregated: j.aggregated,
+      });
       return;
     }
     if (j.type === 'done' && j.report !== undefined) {
@@ -145,7 +168,7 @@ async function readAnalyzeNdjsonStreamWithEvents(
   return done;
 }
 
-const TOTAL_ONBOARD_STEPS = 3;
+const TOTAL_ONBOARD_STEPS = 4;
 
 const PLATFORM_EXAMPLES: Record<PlatformKey, string> = {
   weibo:   'https://weibo.com/u/你的数字ID  或直接填数字ID',
@@ -261,15 +284,95 @@ const DEBUG_PLATFORM_DEFAULTS: Record<PlatformKey, string> = {
 
 const DEBUG_DEFAULT_EMAIL = 'debug@soulmatch.local';
 const DEBUG_DEFAULT_PASSWORD = 'debug123456';
-const DEBUG_TEXT_STEP3 = '【Debug 模式】这是一段用于快速联调的心声示例。';
-const DEBUG_TEXT_STEP4 = '【Debug】如果明天世界末日，今晚想好好吃一顿、和在乎的人待在一起。';
-const MATCH_INTENT_OPTIONS = [
-  { value: '饭搭子', label: '饭搭子', desc: '一起吃饭、打卡，轻松陪伴' },
-  { value: '聊天搭子', label: '聊天搭子', desc: '话题投缘，能经常分享日常' },
-  { value: '旅行搭子', label: '旅行搭子', desc: '节奏合拍，愿意一起出发' },
-  { value: '兴趣搭子', label: '兴趣搭子', desc: '围绕共同爱好建立连接' },
-  { value: '恋爱对象', label: '恋爱对象', desc: '更偏长期陪伴与亲密关系' },
+const DEBUG_RELATIONSHIP_INTENT = '长期恋爱';
+const SCALE_OPTIONS = [1, 2, 3, 4, 5, 6, 7] as const;
+const LOCAL_TAG_OPTIONS = [
+  '情绪稳定', '执行力强', '社恐', '搞笑女/男', '搞钱至上', '顾家', '慢热', '直球选手', '细节控', '冒险派',
+  '共情力强', '高敏感', '理性务实', '浪漫主义', '松弛感', '行动派', '边界感强', '重承诺', '表达欲强', '佛系',
 ] as const;
+
+type QuestionType = 'profile' | 'single' | 'range' | 'tags' | 'scale' | 'text';
+type ProfileAnswer = { nickname: string; gender: string; birthday: string };
+type HeightPreferenceAnswer = { myHeight: number; preferredMin: number; preferredMax: number };
+type QuestionnaireAnswer = string | string[] | number | ProfileAnswer | HeightPreferenceAnswer;
+type QuestionnaireQuestion = {
+  id: number;
+  type: QuestionType;
+  title: string;
+  prompt: string;
+  required?: boolean;
+  helper?: string;
+  options?: string[];
+  placeholder?: string;
+  scaleLeft?: string;
+  scaleRight?: string;
+};
+
+const QUESTIONNAIRE: QuestionnaireQuestion[] = [
+  { id: 1, type: 'profile', title: '基本身份', prompt: '昵称 / 性别 / 生日', required: true },
+  { id: 2, type: 'single', title: '寻找目标', prompt: '你希望匹配的对象性别？', required: true, options: ['男', '女', '不限'] },
+  { id: 3, type: 'single', title: '当前状态', prompt: '你目前处于什么阶段？', required: true, options: ['本科生', '硕博研究生', '已工作'] },
+  { id: 4, type: 'single', title: '意向关系', prompt: '你更偏好的关系类型？', required: true, options: ['寻找结婚对象', '长期恋爱', '长期为主但也接受短期', '顺其自然'] },
+  { id: 5, type: 'range', title: '身高及偏好', prompt: '通过滑块选择你的身高与期望对方身高范围', required: true, helper: '可拖动滑块微调，单位为 cm' },
+  { id: 6, type: 'text', title: '年龄偏好', prompt: '期望对方的年龄范围', required: true, placeholder: '如：同龄、接受±3岁、偏好年上/年下' },
+  { id: 7, type: 'single', title: '学历偏好', prompt: '你对学历的偏好是？', required: true, options: ['只看同等及以上', '无所谓'] },
+  { id: 8, type: 'tags', title: '三个词形容自己', prompt: '从 20 个标签中选择 3 个最像你的', required: true, options: [...LOCAL_TAG_OPTIONS], helper: '请严格选择 3 个标签' },
+  { id: 9, type: 'scale', title: '生育意愿', prompt: '绝对丁克 —— 非常想要孩子', required: true, scaleLeft: '1 绝对丁克', scaleRight: '7 非常想要孩子' },
+  { id: 10, type: 'scale', title: '传统性别角色', prompt: '男主外女主内 的接受度', required: true, scaleLeft: '1 极度反感', scaleRight: '7 非常认同' },
+  { id: 11, type: 'scale', title: '收入差距接受度', prompt: '伴侣比自己收入高/低很多，你的接受度', required: true, scaleLeft: '1 不接受', scaleRight: '7 完全不介意' },
+  { id: 12, type: 'scale', title: '异性边界感', prompt: '伴侣有非常要好的异性闺蜜/兄弟，你的接受度', required: true, scaleLeft: '1 绝对不行', scaleRight: '7 完全正常' },
+  { id: 13, type: 'scale', title: '消费倾向', prompt: '攒钱平替 —— 为体验与品质买单', required: true, scaleLeft: '1 精打细算', scaleRight: '7 活在当下' },
+  { id: 14, type: 'scale', title: '伴侣督促我进步', prompt: '希望伴侣“鞭策我成长”吗？', required: true, scaleLeft: '1 接受现在的我', scaleRight: '7 希望共同成长' },
+  { id: 15, type: 'scale', title: '未来定居偏好', prompt: '回老家/二三线 —— 一线城市打拼', required: true, scaleLeft: '1 回归安稳', scaleRight: '7 一线打拼' },
+  { id: 16, type: 'scale', title: '抽烟喝酒接受度', prompt: '对伴侣抽烟/喝酒的接受程度', required: true, scaleLeft: '1 绝对不能', scaleRight: '7 完全不介意' },
+  { id: 17, type: 'scale', title: '消息回复焦虑', prompt: '伴侣几小时不回微信，你会多焦虑？', required: true, scaleLeft: '1 完全不焦虑', scaleRight: '7 极度内耗' },
+  { id: 18, type: 'scale', title: '黏人程度', prompt: '个人空间需求 —— 随时保持联系', required: true, scaleLeft: '1 非常独立', scaleRight: '7 非常黏人' },
+  { id: 19, type: 'scale', title: '情感袒露', prompt: '戒备森严 —— 毫无保留', required: true, scaleLeft: '1 很难交心', scaleRight: '7 完全打开' },
+  { id: 20, type: 'scale', title: '卧室主导权（可选）', prompt: '顺从/Sub —— 主导/Dom', required: false, scaleLeft: '1 偏顺从', scaleRight: '7 偏主导' },
+  { id: 21, type: 'scale', title: '作息习惯', prompt: '夜猫子 —— 早起鸟', required: true, scaleLeft: '1 夜猫子', scaleRight: '7 早起鸟' },
+  { id: 22, type: 'scale', title: '周末充电方式', prompt: '宅家独处 —— 外出社交', required: true, scaleLeft: '1 纯宅家', scaleRight: '7 高社交' },
+  { id: 23, type: 'scale', title: '探索欲', prompt: '老店复刷 —— 打卡新店', required: true, scaleLeft: '1 常去老店', scaleRight: '7 一定新店' },
+  { id: 24, type: 'scale', title: '生活整洁度容忍', prompt: '对伴侣邋遢/乱丢东西的容忍度', required: true, scaleLeft: '1 零容忍', scaleRight: '7 无所谓' },
+  { id: 25, type: 'scale', title: '非传统约会接受度', prompt: '第一次约会去爬山/逛菜市场/玩密室', required: true, scaleLeft: '1 更偏传统', scaleRight: '7 越特别越好' },
+  { id: 26, type: 'scale', title: '互联网原住民偏好', prompt: '伴侣不用社交媒体是否加分？', required: true, scaleLeft: '1 明显减分', scaleRight: '7 明显加分' },
+  { id: 27, type: 'text', title: '普通的周二晚上', prompt: '晚上 8 点到 11 点，你通常在干嘛？', required: true, placeholder: '可包含具体活动与心情状态' },
+  { id: 28, type: 'text', title: '没有安排的周末', prompt: '如果这个周末没有任何必须做的事，你会怎么度过？', required: true, placeholder: '可写你理想的一天安排' },
+  { id: 29, type: 'text', title: '恋爱雷区', prompt: '亲密关系里你绝对无法接受的底线是什么？', required: true, placeholder: '如：冷暴力、撒谎、失联等' },
+  { id: 30, type: 'text', title: '近期小确幸', prompt: '最近让你觉得“生活还不错”的一件小事是什么？', required: true, placeholder: '简短或详细都可以' },
+];
+
+const DEBUG_QUESTION_ANSWERS: Record<number, QuestionnaireAnswer> = {
+  1: { nickname: 'Debug用户', gender: '不方便透露', birthday: '1998-08-08' },
+  2: '不限',
+  3: '已工作',
+  4: '长期恋爱',
+  5: { myHeight: 172, preferredMin: 165, preferredMax: 182 },
+  6: '接受同龄或±3岁',
+  7: '无所谓',
+  8: ['情绪稳定', '执行力强', '松弛感'],
+  9: 4,
+  10: 2,
+  11: 6,
+  12: 3,
+  13: 4,
+  14: 6,
+  15: 5,
+  16: 2,
+  17: 3,
+  18: 4,
+  19: 5,
+  20: 4,
+  21: 4,
+  22: 5,
+  23: 6,
+  24: 3,
+  25: 6,
+  26: 4,
+  27: '周二晚上一般会去健身 1 小时，回家做饭后刷会短视频。',
+  28: '睡到自然醒，白天咖啡店看书，晚上找朋友吃饭。',
+  29: '冷暴力和长期失联是我的关系底线。',
+  30: '最近和老朋友线下见面聊天，感觉很放松。',
+};
 
 const ANALYZE_STAGE_META: Record<
   AnalyzeStageKey,
@@ -301,7 +404,6 @@ function PrivacyNavLink({ children }: { children: React.ReactNode }) {
 }
 
 type UploadSlot = 'moments' | 'life';
-type QuestionKey = 'q1' | 'q2';
 type StepUploadItem = {
   id: string;
   url: string;
@@ -383,26 +485,26 @@ export default function App() {
   const [validations, setValidations] = useState<Partial<Record<PlatformKey, { ok: boolean; msg: string; url?: string }>>>({}); 
   /** 分析步骤进度文字 */
   const [analysisStatus, setAnalysisStatus] = useState('正在整合你提供的信息…');
-  /** step 3 文字输入 */
-  const [textInput3, setTextInput3] = useState('');
-  /** step 4 文字输入（与 step3 合并展示） */
-  const [textInput4, setTextInput4] = useState('');
-  const [questionStep, setQuestionStep] = useState<QuestionKey>('q1');
-  const [matchIntent, setMatchIntent] = useState<(typeof MATCH_INTENT_OPTIONS)[number]['value']>('饭搭子');
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [questionAnswers, setQuestionAnswers] = useState<Record<number, QuestionnaireAnswer>>({});
+  const [matchIntent, setMatchIntent] = useState('顺其自然');
   /** 语音识别状态 */
-  const [recordingTarget, setRecordingTarget] = useState<QuestionKey | null>(null);
+  const [recordingTarget, setRecordingTarget] = useState<number | null>(null);
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [voicePermission, setVoicePermission] = useState<VoicePermissionState>('unknown');
   const [voiceHint, setVoiceHint] = useState<string>('点击麦克风即可开始语音输入。');
   const [tutorialPlatform, setTutorialPlatform] = useState<PlatformKey | null>(null);
   const [analysisStage, setAnalysisStage] = useState<AnalyzeStageKey>('queued');
+  const [stageTimeline, setStageTimeline] = useState<StageTimelineEntry[]>([]);
+  const [stageStats, setStageStats] = useState<Partial<Record<AnalyzeStageKey, { avgMs: number; count: number; maxMs: number; lastMs: number }>>>({});
   /** 朋友圈截图 / 生活照（服务端上传记录，支持删除） */
   const [momentsUploads, setMomentsUploads] = useState<StepUploadItem[]>([]);
   const [lifePhotoUploads, setLifePhotoUploads] = useState<StepUploadItem[]>([]);
   const [uploadingSlot, setUploadingSlot] = useState<UploadSlot | null>(null);
   const speechRef = useRef<any>(null);
-  const question1TextareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const question2TextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const viewContainerRef = useRef<HTMLDivElement | null>(null);
+  const activeTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const questionFlowTailRef = useRef<HTMLDivElement | null>(null);
 
   /**
    * Debug：仅在 URL 显式带 ?debug=1 或 ?mode=debug 时启用。
@@ -416,9 +518,8 @@ export default function App() {
     setBindings((b) => ({ ...b, ...DEBUG_PLATFORM_DEFAULTS }));
     setEmail(DEBUG_DEFAULT_EMAIL);
     setPassword(DEBUG_DEFAULT_PASSWORD);
-    setTextInput3(DEBUG_TEXT_STEP3);
-    setTextInput4(DEBUG_TEXT_STEP4);
-    setMatchIntent('饭搭子');
+    setMatchIntent(DEBUG_RELATIONSHIP_INTENT);
+    setQuestionAnswers({ ...DEBUG_QUESTION_ANSWERS });
     const nextVal: Partial<Record<PlatformKey, { ok: boolean; msg: string; url?: string }>> = {};
     for (const id of ACTIVE_PLATFORM_KEYS) {
       const val = DEBUG_PLATFORM_DEFAULTS[id];
@@ -606,12 +707,46 @@ export default function App() {
     };
   }, []);
 
-  const appendRecognizedText = (target: QuestionKey, transcript: string) => {
+  useEffect(() => {
+    if (step !== 3) return;
+    const timer = setTimeout(() => {
+      questionFlowTailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      activeTextareaRef.current?.focus();
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [step, questionIndex]);
+
+  useEffect(() => {
+    const container = viewContainerRef.current;
+    if (!container) return;
+    container.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [step]);
+
+  useEffect(() => {
+    const container = viewContainerRef.current;
+    if (!container) return;
+    const onFocusIn = (event: FocusEvent) => {
+      const el = event.target as HTMLElement | null;
+      if (!el) return;
+      const tag = el.tagName.toLowerCase();
+      if (tag !== 'input' && tag !== 'textarea' && tag !== 'select') return;
+      setTimeout(() => {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 120);
+    };
+    container.addEventListener('focusin', onFocusIn);
+    return () => container.removeEventListener('focusin', onFocusIn);
+  }, []);
+
+  const appendRecognizedText = (targetId: number, transcript: string) => {
     const text = transcript.trim();
     if (!text) return;
     const append = (prev: string) => (prev ? `${prev}${/[，。！？\s]$/.test(prev) ? '' : '，'}${text}` : text);
-    if (target === 'q1') setTextInput3(append);
-    else setTextInput4(append);
+    setQuestionAnswers((prev) => {
+      const raw = prev[targetId];
+      const base = typeof raw === 'string' ? raw : '';
+      return { ...prev, [targetId]: append(base) };
+    });
   };
 
   const stopSpeechInput = () => {
@@ -627,9 +762,8 @@ export default function App() {
     }
   };
 
-  const focusQuestionTextarea = (target: QuestionKey) => {
-    const ref = target === 'q1' ? question1TextareaRef : question2TextareaRef;
-    ref.current?.focus();
+  const focusQuestionTextarea = () => {
+    activeTextareaRef.current?.focus();
   };
 
   const ensureMicrophonePermission = async (): Promise<boolean> => {
@@ -664,14 +798,14 @@ export default function App() {
     }
   };
 
-  const startSpeechInput = async (target: QuestionKey) => {
+  const startSpeechInput = async (targetId: number) => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) {
       setSaveMessage('当前浏览器不支持语音输入，请直接键盘输入');
-      focusQuestionTextarea(target);
+      focusQuestionTextarea();
       return;
     }
-    if (recordingTarget === target) {
+    if (recordingTarget === targetId) {
       stopSpeechInput();
       return;
     }
@@ -679,14 +813,14 @@ export default function App() {
 
     const permissionOk = await ensureMicrophonePermission();
     if (!permissionOk) {
-      focusQuestionTextarea(target);
+      focusQuestionTextarea();
       return;
     }
 
     try {
       const rec = new SR();
       speechRef.current = rec;
-      setRecordingTarget(target);
+      setRecordingTarget(targetId);
       setSaveMessage('正在语音输入…再次点击麦克风可停止');
       setVoiceHint('正在收听中，请自然说话；再次点击可停止。');
       rec.lang = 'zh-CN';
@@ -695,7 +829,7 @@ export default function App() {
       rec.maxAlternatives = 1;
       rec.onresult = (e: any) => {
         const t = e?.results?.[e.results.length - 1]?.[0]?.transcript ?? '';
-        appendRecognizedText(target, String(t));
+        appendRecognizedText(targetId, String(t));
       };
       rec.onerror = (e: any) => {
         const code = String(e?.error || '');
@@ -884,20 +1018,85 @@ export default function App() {
     }
   };
 
-  const submitQuestionStep = async () => {
-    stopSpeechInput();
-    if (questionStep === 'q1') {
-      setQuestionStep('q2');
-      setSaveMessage('已记录第 1 题，继续回答下一题');
-      setTimeout(() => focusQuestionTextarea('q2'), 0);
-      return;
+  const updateQuestionAnswer = (questionId: number, value: QuestionnaireAnswer) => {
+    setQuestionAnswers((prev) => ({ ...prev, [questionId]: value }));
+  };
+
+  const toggleTagAnswer = (questionId: number, tag: string) => {
+    setQuestionAnswers((prev) => {
+      const current = Array.isArray(prev[questionId]) ? ([...prev[questionId]] as string[]) : [];
+      const exists = current.includes(tag);
+      if (exists) return { ...prev, [questionId]: current.filter((item) => item !== tag) };
+      if (current.length >= 3) return prev;
+      return { ...prev, [questionId]: [...current, tag] };
+    });
+  };
+
+  const validateQuestion = (question: QuestionnaireQuestion, answer: QuestionnaireAnswer | undefined) => {
+    if (!question.required && (answer === undefined || answer === null || answer === '')) return null;
+    if (question.type === 'profile') {
+      const profile = (answer || {}) as ProfileAnswer;
+      if (!profile.nickname?.trim()) return '请填写昵称';
+      return null;
     }
-    if (textInput3.trim()) {
-      const ok = await uploadText(textInput3.trim(), 'text', false);
+    if (question.type === 'range') {
+      const range = (answer || {}) as HeightPreferenceAnswer;
+      if (typeof range.myHeight !== 'number') return '请先选择你的身高';
+      if (typeof range.preferredMin !== 'number' || typeof range.preferredMax !== 'number') return '请先选择期望身高范围';
+      if (range.preferredMin > range.preferredMax) return '期望身高下限不能高于上限';
+      return null;
+    }
+    if (question.type === 'tags') {
+      const tags = Array.isArray(answer) ? (answer as string[]) : [];
+      if (tags.length !== 3) return '请严格选择 3 个标签';
+      return null;
+    }
+    if (question.type === 'scale') {
+      if (typeof answer !== 'number') {
+        if (question.required) return '请选择 1-7 的分值';
+        return null;
+      }
+      return null;
+    }
+    if (typeof answer !== 'string' || !answer.trim()) return '请先填写当前问题';
+    return null;
+  };
+
+  const formatAnswer = (question: QuestionnaireQuestion, answer: QuestionnaireAnswer | undefined): string => {
+    if (answer === undefined || answer === null || answer === '') return '（未填写）';
+    if (question.type === 'profile') {
+      const profile = answer as ProfileAnswer;
+      return `昵称：${profile.nickname || '未填'}；性别：${profile.gender || '未填写'}；生日：${profile.birthday || '未填写'}`;
+    }
+    if (question.type === 'range') {
+      const range = answer as HeightPreferenceAnswer;
+      return `我的身高：${range.myHeight || '未填'}cm；期望范围：${range.preferredMin || '未填'}-${range.preferredMax || '未填'}cm`;
+    }
+    if (question.type === 'tags') {
+      const tags = Array.isArray(answer) ? (answer as string[]) : [];
+      return tags.length ? tags.join(' / ') : '（未填写）';
+    }
+    if (question.type === 'scale') return `${answer} 分`;
+    return String(answer);
+  };
+
+  const submitFullQuestionnaire = async () => {
+    const summary = QUESTIONNAIRE.map((question) => {
+      const answer = questionAnswers[question.id];
+      return `Q${question.id}【${question.title}】${question.prompt}\n答：${formatAnswer(question, answer)}`;
+    }).join('\n\n');
+
+    const openTextSummary = QUESTIONNAIRE
+      .filter((question) => question.type === 'text')
+      .map((question) => `Q${question.id}：${formatAnswer(question, questionAnswers[question.id])}`)
+      .join('\n');
+
+    if (summary.trim()) {
+      const ok = await uploadText(summary.trim(), 'text', false);
       if (!ok) return;
     }
-    if (textInput4.trim()) {
-      const ok = await uploadText(textInput4.trim(), 'voice-text', false);
+    if (openTextSummary.trim()) {
+      const ok = await uploadText(openTextSummary.trim(), 'voice-text', false);
       if (!ok) return;
     }
     if (matchIntent.trim()) {
@@ -905,6 +1104,31 @@ export default function App() {
       if (!ok) return;
     }
     startAnalysis();
+  };
+
+  const submitQuestionStep = async () => {
+    stopSpeechInput();
+    const currentQuestion = QUESTIONNAIRE[questionIndex];
+    if (!currentQuestion) return;
+    const answer = questionAnswers[currentQuestion.id];
+    const validationError = validateQuestion(currentQuestion, answer);
+    if (validationError) {
+      setSaveMessage(validationError);
+      if (currentQuestion.type === 'text') setTimeout(() => focusQuestionTextarea(), 0);
+      return;
+    }
+
+    if (currentQuestion.id === 4 && typeof answer === 'string') {
+      setMatchIntent(answer);
+    }
+    const nextIndex = questionIndex + 1;
+    const finished = nextIndex >= QUESTIONNAIRE.length;
+    if (finished) {
+      await submitFullQuestionnaire();
+      return;
+    }
+    setQuestionIndex(nextIndex);
+    setSaveMessage(`已记录第 ${currentQuestion.id} 题，继续下一题`);
   };
 
   const bindPlatform = async (platformId: PlatformKey) => {
@@ -992,6 +1216,7 @@ export default function App() {
   const startAnalysis = async () => {
     setStep(6);
     setAnalysisStage('queued');
+    setStageTimeline([]);
     setAnalysisStatus(ANALYZE_STAGE_META.queued.label);
     try {
       setUserScreenshotUrls([]);
@@ -1002,6 +1227,10 @@ export default function App() {
           onStage: (event) => {
             setAnalysisStage(event.stage);
             setAnalysisStatus(event.message || ANALYZE_STAGE_META[event.stage].label);
+          },
+          onStageDuration: (event) => {
+            setStageTimeline((prev) => [...prev, { ...event, timestamp: Date.now() }]);
+            setStageStats((prev) => ({ ...prev, [event.stage]: event.aggregated }));
           },
         });
         setAnalysisStage('done');
@@ -1040,15 +1269,15 @@ export default function App() {
       else alert(`网络错误：${msg}`);
       setStep(3);
     } finally {
-      setQuestionStep('q1');
+      setQuestionIndex(0);
     }
   };
 
   const questionButtonLabel = stepUploadProgress > 0
     ? '保存中…'
-    : questionStep === 'q1'
-      ? '继续下一题 →'
-      : '生成灵魂档案 →';
+    : questionIndex >= QUESTIONNAIRE.length - 1
+      ? '生成灵魂档案 →'
+      : '继续下一题 →';
 
   const saveSoulPosterImage = async () => {
     const el = document.getElementById('soul-poster-capture');
@@ -1148,6 +1377,21 @@ export default function App() {
             <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.45)', marginBottom: '8px', fontWeight: 600, letterSpacing: '0.4px' }}>
               📋 如何获取你自己的链接
             </p>
+
+            {/* 教程示意图 */}
+            <div style={{ marginBottom: '14px', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/tutorials/${id}-tutorial.png`}
+                alt={`${name}获取链接教程`}
+                style={{ width: '100%', display: 'block' }}
+                onError={(e) => {
+                  // 如果图片不存在，隐藏图片容器
+                  e.currentTarget.parentElement!.style.display = 'none';
+                }}
+              />
+            </div>
+
             <div style={{ marginBottom: '14px' }}>
               {PLATFORM_HINTS[id].map((hint, i) => (
                 <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '6px', alignItems: 'flex-start' }}>
@@ -1307,33 +1551,184 @@ export default function App() {
     );
   };
 
-  /** 设计稿：阶段 1/3→33% … 3/3→100% */
-  const progressPercent =
-    step >= 1 && step <= TOTAL_ONBOARD_STEPS
-      ? Math.min(100, Math.round((step / TOTAL_ONBOARD_STEPS) * 100))
-      : 0;
+  /** 设计稿：阶段 1/4→25% … 4/4→100% */
+  const progressPercent = (() => {
+    if (step === 1) return Math.round((1 / TOTAL_ONBOARD_STEPS) * 100);
+    if (step === 2) return Math.round((2 / TOTAL_ONBOARD_STEPS) * 100);
+    if (step === 3) return Math.round((3 / TOTAL_ONBOARD_STEPS) * 100);
+    if (step === 4) {
+      const answeredRatio = Math.max(0, Math.min(1, questionIndex / QUESTIONNAIRE.length));
+      return Math.min(100, Math.round(((3 + answeredRatio) / TOTAL_ONBOARD_STEPS) * 100));
+    }
+    return 0;
+  })();
   /** 了解程度心形：与进度条保持一致 */
   const familiarityPercent = progressPercent;
-  const activeQuestion =
-    questionStep === 'q1'
-      ? {
-          key: 'q1' as const,
-          title: '人格底色深度分析',
-          body: '我是一个什么样的人？更容易被什么样的人吸引？',
-          placeholder: '输入你想说的心声…',
-          rows: 5,
-          value: textInput3,
-          onChange: setTextInput3,
-        }
-      : {
-          key: 'q2' as const,
-          title: '主观意图',
-          body: '如果明天世界末日，你今晚会做什么？',
-          placeholder: '输入你的回答…',
-          rows: 4,
-          value: textInput4,
-          onChange: setTextInput4,
-        };
+  const answeredCount = Math.max(0, Math.min(questionIndex, QUESTIONNAIRE.length));
+  const answeredQuestions = QUESTIONNAIRE.slice(0, questionIndex);
+  const currentQuestion = QUESTIONNAIRE[Math.min(questionIndex, QUESTIONNAIRE.length - 1)];
+  const currentAnswer = currentQuestion ? questionAnswers[currentQuestion.id] : undefined;
+  const isCurrentTextQuestion = Boolean(currentQuestion && currentQuestion.type === 'text');
+
+  const renderQuestionInput = (question: QuestionnaireQuestion, answer: QuestionnaireAnswer | undefined, readonly = false) => {
+    if (readonly) {
+      return <p className="ref-q-answer">{formatAnswer(question, answer)}</p>;
+    }
+
+    if (question.type === 'profile') {
+      const profile = (answer || { nickname: '', gender: '', birthday: '' }) as ProfileAnswer;
+      return (
+        <div className="ref-q-grid">
+          <input
+            type="text"
+            className="glass-input ref-q-input"
+            placeholder="昵称"
+            value={profile.nickname || ''}
+            onChange={(e) => updateQuestionAnswer(question.id, { ...profile, nickname: e.target.value })}
+          />
+          <select
+            className="glass-input ref-q-input"
+            value={profile.gender || ''}
+            onChange={(e) => updateQuestionAnswer(question.id, { ...profile, gender: e.target.value })}
+          >
+            <option value="">选择性别</option>
+            <option value="男">男</option>
+            <option value="女">女</option>
+            <option value="其他">其他</option>
+            <option value="不方便透露">不方便透露</option>
+          </select>
+          <input
+            type="date"
+            className="glass-input ref-q-input"
+            value={profile.birthday || ''}
+            onChange={(e) => updateQuestionAnswer(question.id, { ...profile, birthday: e.target.value })}
+          />
+        </div>
+      );
+    }
+
+    if (question.type === 'range') {
+      const range = (answer || { myHeight: 172, preferredMin: 165, preferredMax: 182 }) as HeightPreferenceAnswer;
+      const myHeight = typeof range.myHeight === 'number' ? range.myHeight : 172;
+      const preferredMin = typeof range.preferredMin === 'number' ? range.preferredMin : 165;
+      const preferredMax = typeof range.preferredMax === 'number' ? range.preferredMax : 182;
+      return (
+        <div className="ref-range-wrap">
+          <div className="ref-range-label">我的身高：{myHeight}cm</div>
+          <input
+            type="range"
+            min={140}
+            max={210}
+            step={1}
+            value={myHeight}
+            className="ref-height-range"
+            onChange={(e) => updateQuestionAnswer(question.id, { ...range, myHeight: Number(e.target.value) })}
+          />
+          <div className="ref-range-label">期望对方身高：{preferredMin}cm - {preferredMax}cm</div>
+          <input
+            type="range"
+            min={140}
+            max={210}
+            step={1}
+            value={preferredMin}
+            className="ref-height-range"
+            onChange={(e) => {
+              const val = Number(e.target.value);
+              updateQuestionAnswer(question.id, { ...range, preferredMin: Math.min(val, preferredMax), preferredMax });
+            }}
+          />
+          <input
+            type="range"
+            min={140}
+            max={210}
+            step={1}
+            value={preferredMax}
+            className="ref-height-range"
+            onChange={(e) => {
+              const val = Number(e.target.value);
+              updateQuestionAnswer(question.id, { ...range, preferredMin, preferredMax: Math.max(val, preferredMin) });
+            }}
+          />
+        </div>
+      );
+    }
+
+    if (question.type === 'single') {
+      const value = typeof answer === 'string' ? answer : '';
+      return (
+        <div className="ref-choice-grid">
+          {(question.options || []).map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={`ref-choice-btn${value === option ? ' active' : ''}`}
+              onClick={() => updateQuestionAnswer(question.id, option)}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      );
+    }
+
+    if (question.type === 'tags') {
+      const values = Array.isArray(answer) ? (answer as string[]) : [];
+      return (
+        <>
+          <div className="ref-choice-grid ref-choice-grid-tags">
+            {(question.options || []).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={`ref-choice-btn ref-choice-tag${values.includes(option) ? ' active' : ''}`}
+                onClick={() => toggleTagAnswer(question.id, option)}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+          <p className="ref-q-tag-hint">已选 {values.length}/3</p>
+        </>
+      );
+    }
+
+    if (question.type === 'scale') {
+      const value = typeof answer === 'number' ? answer : 0;
+      return (
+        <div className="ref-scale-wrap">
+          <div className="ref-scale-grid">
+            {SCALE_OPTIONS.map((num) => (
+              <button
+                key={num}
+                type="button"
+                className={`ref-scale-btn${value === num ? ' active' : ''}`}
+                onClick={() => updateQuestionAnswer(question.id, num)}
+              >
+                {num}
+              </button>
+            ))}
+          </div>
+          <div className="ref-scale-labels">
+            <span>{question.scaleLeft || '1'}</span>
+            <span>{question.scaleRight || '7'}</span>
+          </div>
+        </div>
+      );
+    }
+
+    const value = typeof answer === 'string' ? answer : '';
+    return (
+      <textarea
+        ref={activeTextareaRef}
+        className="glass-input ref-chat-textarea"
+        placeholder={question.placeholder || '请输入你的回答'}
+        rows={4}
+        value={value}
+        onChange={(e) => updateQuestionAnswer(question.id, e.target.value)}
+      />
+    );
+  };
+
   const bindingCount = Object.values(savedPlatforms).filter(Boolean).length;
   const screenshotCount = momentsUploads.length + lifePhotoUploads.length;
 
@@ -1392,6 +1787,7 @@ export default function App() {
       <div className="bg-gradient"></div><div className="glow-orb orb-1"></div><div className="glow-orb orb-2"></div>
 
       <div
+        ref={viewContainerRef}
         className={`view-container${step >= 1 && step <= TOTAL_ONBOARD_STEPS ? ' view-container-step' : ''}`}
       >
         {step === 0 && (
@@ -1458,13 +1854,25 @@ export default function App() {
               <div className="ref-progress-track">
                 <div className="ref-progress-fill" style={{ width: `${progressPercent}%` }} />
               </div>
+              {step === 4 && (
+                <p className="ref-progress-hint">问卷进度：已回答 {answeredCount} / {QUESTIONNAIRE.length} 题</p>
+              )}
               {saveMessage && <p className="ref-progress-hint">{saveMessage}</p>}
             </div>
 
             {step === 1 && (
               <div className="step-body ref-step1-body">
+                {debugMode && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ marginBottom: '16px' }}
+                    onClick={() => setStep(4)}
+                  >
+                    🚀 Debug: 跳到问卷
+                  </button>
+                )}
                 {renderUploadSection('moments', '上传朋友圈截图', '可多选上传，最多 5 张；也可跳过。', '📸')}
-                {renderUploadSection('life', '上传最近生活照片', '支持多选，最多 10 张。', '🖼')}
 
                 <div className="bottom-action">
                   <button type="button" className="btn btn-primary btn-glow" onClick={() => setStep(2)}>
@@ -1475,7 +1883,39 @@ export default function App() {
             )}
 
             {step === 2 && (
+              <div className="step-body ref-step1-body">
+                {debugMode && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ marginBottom: '16px' }}
+                    onClick={() => setStep(4)}
+                  >
+                    🚀 Debug: 跳到问卷
+                  </button>
+                )}
+                {renderUploadSection('life', '上传最近生活照片', '支持多选，最多 10 张。', '🖼')}
+
+                <div className="bottom-action">
+                  <button type="button" className="btn btn-primary btn-glow" onClick={() => setStep(3)}>
+                    下一步 →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {step === 3 && (
               <div className="step-body">
+                {debugMode && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ marginBottom: '16px' }}
+                    onClick={() => setStep(4)}
+                  >
+                    🚀 Debug: 跳到问卷
+                  </button>
+                )}
                 <h2 className="step-title ref-platform-main-title">
                   社交平台（仅获取公开数据，用来创建分身）
                 </h2>
@@ -1495,85 +1935,93 @@ export default function App() {
                     小红书入口已暂时关闭，后续恢复后会重新开放。
                   </p>
                 )}
-                <div className="bottom-action">
-                  <button type="button" className="btn btn-primary btn-glow" onClick={() => setStep(3)}>
+                <div className="bottom-action ref-chat-bottom-action">
+                  <button type="button" className="btn btn-primary btn-glow" onClick={() => setStep(4)}>
                     下一步 →
                   </button>
                 </div>
               </div>
             )}
 
-            {step === 3 && (
+            {step === 4 && (
               <div className="step-body ref-chat-step">
                 <h2 className="ref-chat-h1">让我更了解你吧</h2>
-                <p className="ref-chat-sub">一次只问你一个问题，回答完再进入下一题。</p>
+                <p className="ref-chat-sub">每次提交一题后，会自动向上展开下一题。</p>
                 <div className="ref-stage-pill ref-chat-stage-pill">
-                  问题 {questionStep === 'q1' ? '1' : '2'} / 2
+                  问题 {Math.min(questionIndex + 1, QUESTIONNAIRE.length)} / {QUESTIONNAIRE.length}
                 </div>
-                <div className="ref-chat-row">
-                  <div className="ref-chat-avatar" aria-hidden>
-                    🧙
-                  </div>
-                  <div className="ref-chat-bubble">
-                    <div className="ref-bubble-title">{activeQuestion.title}</div>
-                    <div className="ref-bubble-body">{activeQuestion.body}</div>
-                  </div>
-                </div>
-                <textarea
-                  id="text-input"
-                  ref={activeQuestion.key === 'q1' ? question1TextareaRef : question2TextareaRef}
-                  className="glass-input ref-chat-textarea"
-                  placeholder={activeQuestion.placeholder}
-                  rows={activeQuestion.rows}
-                  value={activeQuestion.value}
-                  onChange={(e) => activeQuestion.onChange(e.target.value)}
-                />
-                <div className="ref-chat-toolbar">
-                  <button type="button" className="ref-chat-keyboard-btn" onClick={() => focusQuestionTextarea(activeQuestion.key)}>
-                    键盘输入
-                  </button>
+
+                {debugMode && (
                   <button
                     type="button"
-                    className="ref-chat-mic"
-                    aria-label="语音输入"
-                    aria-pressed={recordingTarget === activeQuestion.key}
-                    onClick={() => void startSpeechInput(activeQuestion.key)}
+                    className="btn btn-secondary"
+                    style={{ marginBottom: '16px' }}
+                    onClick={() => void submitFullQuestionnaire()}
                   >
-                    {recordingTarget === activeQuestion.key ? '⏹' : '🎤'}
+                    🚀 Debug: 跳过问卷直接生成
                   </button>
+                )}
+
+                <div className="ref-question-flow">
+                  {answeredQuestions.map((question) => (
+                    <div key={question.id} className="ref-question-card answered">
+                      <div className="ref-chat-row">
+                        <div className="ref-chat-avatar" aria-hidden>✓</div>
+                        <div className="ref-chat-bubble">
+                          <div className="ref-bubble-title">Q{question.id} · {question.title}</div>
+                          <div className="ref-bubble-body">{question.prompt}</div>
+                        </div>
+                      </div>
+                      {renderQuestionInput(question, questionAnswers[question.id], true)}
+                    </div>
+                  ))}
+
+                  <div className="ref-question-card active">
+                    <div className="ref-chat-row">
+                      <div className="ref-chat-avatar" aria-hidden>🧙</div>
+                      <div className="ref-chat-bubble">
+                        <div className="ref-bubble-title">
+                          Q{currentQuestion.id} · {currentQuestion.title}
+                          {!currentQuestion.required && <span className="ref-q-optional">（选填）</span>}
+                        </div>
+                        <div className="ref-bubble-body">{currentQuestion.prompt}</div>
+                      </div>
+                    </div>
+                    {renderQuestionInput(currentQuestion, currentAnswer)}
+                    {currentQuestion.helper && <p className="ref-q-helper">{currentQuestion.helper}</p>}
+                  </div>
                 </div>
-                {questionStep === 'q2' && (
-                  <div className="ref-intent-card">
-                    <div className="ref-intent-head">
-                      <strong>你这次更想找什么人？</strong>
-                      <span>报告会按你的目标给出更贴近的建议</span>
-                    </div>
-                    <div className="ref-intent-grid">
-                      {MATCH_INTENT_OPTIONS.map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          className={`ref-intent-option${matchIntent === option.value ? ' active' : ''}`}
-                          onClick={() => setMatchIntent(option.value)}
-                        >
-                          <strong>{option.label}</strong>
-                          <span>{option.desc}</span>
-                        </button>
-                      ))}
-                    </div>
+
+                {isCurrentTextQuestion && (
+                  <div className="ref-chat-toolbar">
+                    <button type="button" className="ref-chat-keyboard-btn" onClick={() => focusQuestionTextarea()}>
+                      键盘输入
+                    </button>
+                    <button
+                      type="button"
+                      className="ref-chat-mic"
+                      aria-label="语音输入"
+                      aria-pressed={recordingTarget === currentQuestion.id}
+                      onClick={() => void startSpeechInput(currentQuestion.id)}
+                    >
+                      {recordingTarget === currentQuestion.id ? '⏹' : '🎤'}
+                    </button>
                   </div>
                 )}
-                <div className="ref-chat-voice-hint">
-                  {voiceSupported ? voiceHint : '当前浏览器暂不支持语音输入，请直接使用键盘。'}
-                </div>
+                {isCurrentTextQuestion && (
+                  <div className="ref-chat-voice-hint">
+                    {voiceSupported ? voiceHint : '当前浏览器暂不支持语音输入，请直接使用键盘。'}
+                  </div>
+                )}
+                <div ref={questionFlowTailRef} />
                 <div className="bottom-action">
-                  {questionStep === 'q2' && (
+                  {questionIndex > 0 && (
                     <button
                       type="button"
                       className="btn btn-secondary"
                       onClick={() => {
                         stopSpeechInput();
-                        setQuestionStep('q1');
+                        setQuestionIndex((prev) => Math.max(0, prev - 1));
                       }}
                     >
                       返回上一题
@@ -1619,20 +2067,35 @@ export default function App() {
                     <span className="ref-loading-stage-icon">{stageDone ? '✓' : isCurrent ? '●' : '⋯'}</span>
                     <span>
                       {label}
-                      <span className="ref-loading-stage-sub">
-                        {key === 'scraping'
-                          ? `已绑定 ${bindingCount} 个平台`
-                          : key === 'vision'
-                            ? `正在分析 ${screenshotCount} 张截图`
-                            : key === 'prompting'
-                              ? `AI 整合 ${bindingCount} 平台 + ${screenshotCount} 视觉线索`
-                              : null}
-                      </span>
+                    <span className="ref-loading-stage-sub">
+                      {key === 'scraping'
+                        ? `已绑定 ${bindingCount} 个平台`
+                        : key === 'vision'
+                          ? `正在分析 ${screenshotCount} 张截图`
+                          : key === 'prompting'
+                            ? `AI 整合 ${bindingCount} 平台 + ${screenshotCount} 视觉线索`
+                            : null}
                     </span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          {stageTimeline.length > 0 && (
+            <div className="ref-stage-timeline">
+              {stageTimeline.map((entry) => (
+                <div key={`${entry.stage}-${entry.timestamp}`} className="ref-stage-timeline-item">
+                  <div className="ref-stage-timeline-head">
+                    <strong>{ANALYZE_STAGE_META[entry.stage].label}</strong>
+                    <span>{(entry.durationMs / 1000).toFixed(1)}s</span>
                   </div>
-                );
-              })}
+                  <div className="ref-stage-timeline-meta">
+                    平均 {(entry.aggregated.avgMs / 1000).toFixed(1)}s · {entry.aggregated.count} 次 · 最近 {(entry.aggregated.lastMs / 1000).toFixed(1)}s
+                  </div>
+                </div>
+              ))}
             </div>
+          )}
           </div>
         )}
 
