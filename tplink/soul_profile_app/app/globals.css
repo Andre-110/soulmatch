@@ -2416,6 +2416,12 @@ h1.title.ref-home-title {
     transition: transform 0.15s ease;
 }
 
+.ref-chat-mic[aria-pressed="true"] {
+    border-color: rgba(250, 243, 182, 0.9);
+    background: rgba(250, 243, 182, 0.18);
+    box-shadow: 0 0 0 8px rgba(250, 243, 182, 0.1);
+}
+
 .ref-chat-mic:active {
     transform: scale(0.96);
 }

@@ -265,6 +265,8 @@ type StepUploadItem = {
   url: string;
 };
 
+type VoicePermissionState = 'unknown' | 'granted' | 'prompt' | 'denied' | 'unsupported';
+
 function readDebugModeFromLocation(): boolean {
   if (typeof window === 'undefined') return false;
   const q = new URLSearchParams(window.location.search);
@@ -348,6 +350,8 @@ export default function App() {
   /** 语音识别状态 */
   const [recordingTarget, setRecordingTarget] = useState<QuestionKey | null>(null);
   const [voiceSupported, setVoiceSupported] = useState(false);
+  const [voicePermission, setVoicePermission] = useState<VoicePermissionState>('unknown');
+  const [voiceHint, setVoiceHint] = useState<string>('点击麦克风即可开始语音输入。');
   const [tutorialPlatform, setTutorialPlatform] = useState<PlatformKey | null>(null);
   const [analysisStage, setAnalysisStage] = useState<AnalyzeStageKey>('queued');
   /** 朋友圈截图 / 生活照（服务端上传记录，支持删除） */
@@ -463,6 +467,51 @@ export default function App() {
       Boolean((window as any).SpeechRecognition) ||
       Boolean((window as any).webkitSpeechRecognition);
     setVoiceSupported(supported);
+    if (!supported) {
+      setVoicePermission('unsupported');
+      setVoiceHint('当前浏览器不支持语音识别，请直接使用键盘输入。');
+      return;
+    }
+
+    if (!window.isSecureContext) {
+      setVoiceHint('语音输入需要在 HTTPS 或本机安全环境下使用。');
+    }
+
+    let permissionStatus: PermissionStatus | null = null;
+    let cancelled = false;
+    const syncPermission = async () => {
+      try {
+        if (!navigator.permissions?.query) return;
+        permissionStatus = await navigator.permissions.query({
+          // PermissionName 类型不包含 microphone 的历史浏览器兼容声明
+          name: 'microphone' as PermissionName,
+        });
+        if (cancelled) return;
+        const nextState = permissionStatus.state as VoicePermissionState;
+        setVoicePermission(nextState);
+        if (nextState === 'granted') {
+          setVoiceHint('麦克风已授权，可直接语音输入。');
+        } else if (nextState === 'denied') {
+          setVoiceHint('麦克风权限已被拒绝，请在浏览器设置中重新开启。');
+        } else {
+          setVoiceHint('首次使用会请求麦克风权限，允许后即可语音输入。');
+        }
+        permissionStatus.onchange = () => {
+          const changed = permissionStatus?.state as VoicePermissionState;
+          setVoicePermission(changed);
+          if (changed === 'granted') setVoiceHint('麦克风已授权，可直接语音输入。');
+          else if (changed === 'denied') setVoiceHint('麦克风权限已被拒绝，请在浏览器设置中重新开启。');
+          else setVoiceHint('首次使用会请求麦克风权限，允许后即可语音输入。');
+        };
+      } catch {
+        // 某些浏览器不支持 permissions API，保留默认提示
+      }
+    };
+    void syncPermission();
+    return () => {
+      cancelled = true;
+      if (permissionStatus) permissionStatus.onchange = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -532,6 +581,7 @@ export default function App() {
     } finally {
       speechRef.current = null;
       setRecordingTarget(null);
+      setVoiceHint('语音输入已停止，可继续编辑文字。');
     }
   };
 
@@ -540,7 +590,39 @@ export default function App() {
     ref.current?.focus();
   };
 
-  const startSpeechInput = (target: QuestionKey) => {
+  const ensureMicrophonePermission = async (): Promise<boolean> => {
+    if (typeof window === 'undefined') return false;
+    if (!window.isSecureContext) {
+      setVoiceHint('当前环境不是安全上下文，语音输入不可用。');
+      return false;
+    }
+    const mediaDevices = navigator.mediaDevices;
+    if (!mediaDevices?.getUserMedia) {
+      setVoiceHint('当前浏览器不支持麦克风调用，请直接键盘输入。');
+      return false;
+    }
+    if (voicePermission === 'granted') return true;
+    try {
+      const stream = await mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      setVoicePermission('granted');
+      setVoiceHint('麦克风已授权，可直接语音输入。');
+      return true;
+    } catch (error) {
+      const name = error instanceof DOMException ? error.name : '';
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        setVoicePermission('denied');
+        setVoiceHint('麦克风权限未开启，请在浏览器设置中允许后重试。');
+      } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        setVoiceHint('未检测到可用麦克风设备。');
+      } else {
+        setVoiceHint('麦克风初始化失败，请稍后重试或改用键盘输入。');
+      }
+      return false;
+    }
+  };
+
+  const startSpeechInput = async (target: QuestionKey) => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) {
       setSaveMessage('当前浏览器不支持语音输入，请直接键盘输入');
@@ -553,11 +635,18 @@ export default function App() {
     }
     if (recordingTarget) stopSpeechInput();
 
+    const permissionOk = await ensureMicrophonePermission();
+    if (!permissionOk) {
+      focusQuestionTextarea(target);
+      return;
+    }
+
     try {
       const rec = new SR();
       speechRef.current = rec;
       setRecordingTarget(target);
       setSaveMessage('正在语音输入…再次点击麦克风可停止');
+      setVoiceHint('正在收听中，请自然说话；再次点击可停止。');
       rec.lang = 'zh-CN';
       rec.continuous = true;
       rec.interimResults = false;
@@ -570,8 +659,17 @@ export default function App() {
         const code = String(e?.error || '');
         if (code === 'not-allowed' || code === 'service-not-allowed') {
           setSaveMessage('麦克风权限未开启，请允许后重试，或直接键盘输入');
+          setVoicePermission('denied');
+          setVoiceHint('浏览器拒绝了麦克风权限，请手动开启后重试。');
+        } else if (code === 'no-speech' || code === 'audio-capture') {
+          setSaveMessage('没有识别到语音，请靠近麦克风后重试');
+          setVoiceHint('没有识别到语音，请确认麦克风正常并重新尝试。');
+        } else if (code === 'network') {
+          setSaveMessage('语音服务连接失败，请稍后重试');
+          setVoiceHint('语音服务连接失败，请稍后重试或改用键盘输入。');
         } else {
           setSaveMessage('语音识别失败，请重试或直接键盘输入');
+          setVoiceHint('语音识别失败，请重试或直接键盘输入。');
         }
         setRecordingTarget(null);
         speechRef.current = null;
@@ -579,10 +677,12 @@ export default function App() {
       rec.onend = () => {
         setRecordingTarget(null);
         speechRef.current = null;
+        setVoiceHint('语音输入已结束，内容已追加到输入框。');
       };
       rec.start();
     } catch {
       setSaveMessage('语音输入启动失败，请直接键盘输入');
+      setVoiceHint('语音输入启动失败，请直接键盘输入。');
       setRecordingTarget(null);
       speechRef.current = null;
     }
@@ -1372,7 +1472,8 @@ export default function App() {
                     type="button"
                     className="ref-chat-mic"
                     aria-label="语音输入"
-                    onClick={() => startSpeechInput(activeQuestion.key)}
+                    aria-pressed={recordingTarget === activeQuestion.key}
+                    onClick={() => void startSpeechInput(activeQuestion.key)}
                   >
                     {recordingTarget === activeQuestion.key ? '⏹' : '🎤'}
                   </button>
@@ -1399,9 +1500,7 @@ export default function App() {
                   </div>
                 )}
                 <div className="ref-chat-voice-hint">
-                  {voiceSupported
-                    ? '点击麦克风即可同步语音输入，点击停止后自动保存。'
-                    : '当前浏览器暂不支持语音输入，请直接使用键盘。'}
+                  {voiceSupported ? voiceHint : '当前浏览器暂不支持语音输入，请直接使用键盘。'}
                 </div>
                 <div className="bottom-action">
                   {questionStep === 'q2' && (
