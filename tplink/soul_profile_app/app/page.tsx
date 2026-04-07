@@ -1378,18 +1378,22 @@ export default function App() {
               📋 如何获取你自己的链接
             </p>
 
-            {/* 教程示意图 */}
-            <div style={{ marginBottom: '14px', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={`/tutorials/${id}-tutorial.png`}
-                alt={`${name}获取链接教程`}
-                style={{ width: '100%', display: 'block' }}
-                onError={(e) => {
-                  // 如果图片不存在，隐藏图片容器
-                  e.currentTarget.parentElement!.style.display = 'none';
-                }}
-              />
+            {/* 教程示意图 - 分步展示 */}
+            <div style={{ marginBottom: '14px' }}>
+              {[1, 2, 3].map((stepNum) => (
+                <div key={stepNum} style={{ marginBottom: '8px', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/tutorials/${id}-step${stepNum}.png`}
+                    alt={`${name}获取链接教程步骤${stepNum}`}
+                    style={{ width: '100%', display: 'block' }}
+                    onError={(e) => {
+                      // 如果图片不存在，隐藏图片容器
+                      e.currentTarget.parentElement!.style.display = 'none';
+                    }}
+                  />
+                </div>
+              ))}
             </div>
 
             <div style={{ marginBottom: '14px' }}>
