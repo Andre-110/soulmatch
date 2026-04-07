@@ -2700,6 +2700,25 @@ h1.title.ref-home-title {
     background: rgba(0, 0, 0, 0.16);
 }
 
+.ref-guide-media {
+    margin-bottom: 16px;
+}
+
+.ref-guide-preview {
+    width: 100%;
+    border-radius: 18px;
+    display: block;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.24);
+}
+
+.ref-guide-caption {
+    margin-top: 10px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.74);
+}
+
 .ref-guide-example strong {
     display: block;
     margin-bottom: 8px;

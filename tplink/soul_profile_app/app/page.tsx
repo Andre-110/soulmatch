@@ -194,6 +194,48 @@ const PLATFORM_HINTS: Record<PlatformKey, PlatformHint[]> = {
   ],
 };
 
+const PLATFORM_TUTORIAL_MEDIA: Record<
+  PlatformKey,
+  { src: string; alt: string; caption: string; pitfalls: string[] }
+> = {
+  weibo: {
+    src: '/screenshots/weibo_2026-04-05T17-03-32.jpg',
+    alt: '微博主页示例图',
+    caption: '示例图展示的是微博个人主页，地址栏里通常会出现 `/u/数字ID`。',
+    pitfalls: ['不要复制单条微博链接', '优先使用个人主页链接或纯数字 ID'],
+  },
+  xhs: {
+    src: '/screenshots/xhs_2026-04-05T17-04-34.jpg',
+    alt: '小红书主页示例图',
+    caption: '小红书必须优先使用 App 分享链接，网页版主页直链多数情况下无法直接抓取。',
+    pitfalls: ['不要直接贴网页版个人主页', '确保链接是 `xhslink.com/m/` 开头'],
+  },
+  douyin: {
+    src: '/screenshots/douyin_2026-04-04T16-41-53.jpg',
+    alt: '抖音主页示例图',
+    caption: '抖音建议复制完整主页链接，系统会自动识别其中的用户标识。',
+    pitfalls: ['不要只复制视频链接', '必须是 `douyin.com/user/...` 主页链接'],
+  },
+  netease: {
+    src: '/screenshots/netease_2026-04-05T17-43-58.jpg',
+    alt: '网易云主页示例图',
+    caption: '网易云通常只需要个人主页里的数字 ID，也可以直接复制完整主页链接。',
+    pitfalls: ['别复制歌单链接', '优先使用 `user/home?id=数字ID`'],
+  },
+  douban: {
+    src: '/screenshots/douban_2026-04-05T17-44-09.jpg',
+    alt: '豆瓣主页示例图',
+    caption: '豆瓣个人主页链接通常是 `douban.com/people/你的ID/` 这种格式。',
+    pitfalls: ['不要贴作品条目页', '复制个人主页或 `people/ID` 即可'],
+  },
+  zhihu: {
+    src: '/screenshots/zhihu_2026-04-05T17-44-23.jpg',
+    alt: '知乎主页示例图',
+    caption: '知乎通常只需要个人主页里的用户名，也可以直接贴完整主页链接。',
+    pitfalls: ['不要贴单篇回答链接', '优先复制 `zhihu.com/people/用户名`'],
+  },
+};
+
 const PLATFORM_NAMES: Record<PlatformKey, string> = {
   weibo: '微博',
   xhs: '小红书',
@@ -1598,9 +1640,24 @@ export default function App() {
                 </div>
               ))}
             </div>
+            <div className="ref-guide-media">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={PLATFORM_TUTORIAL_MEDIA[tutorialPlatform].src}
+                alt={PLATFORM_TUTORIAL_MEDIA[tutorialPlatform].alt}
+                className="ref-guide-preview"
+              />
+              <p className="ref-guide-caption">{PLATFORM_TUTORIAL_MEDIA[tutorialPlatform].caption}</p>
+            </div>
             <div className="ref-guide-example">
               <strong>示例格式</strong>
               <p>{PLATFORM_EXAMPLES[tutorialPlatform]}</p>
+            </div>
+            <div className="ref-guide-example">
+              <strong>常见填错</strong>
+              {PLATFORM_TUTORIAL_MEDIA[tutorialPlatform].pitfalls.map((item) => (
+                <p key={item}>- {item}</p>
+              ))}
             </div>
             <button
               type="button"
