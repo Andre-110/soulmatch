@@ -68,10 +68,19 @@ export function resolvePlatformUrl(
     }
 
     if (lower.includes('xiaohongshu.com')) {
-      // 直接主页 URL 没有 xsec_token，无法不登录访问，必须用 App 分享链接
+      const normalized = normalizeHttpsUrl(raw);
+      const parsed = new URL(normalized);
+      const hasProfilePath = /\/user\/profile\//i.test(parsed.pathname);
+      const hasXsecToken = parsed.searchParams.has('xsec_token');
+
+      if (hasProfilePath && hasXsecToken) {
+        return { ok: true, url: normalized, extractedId: normalized };
+      }
+
+      // 裸主页直链没有 xsec_token，服务端无头环境大概率被拦；只接受带 token 的真实分享落地页
       return {
         ok: false,
-        error: '小红书主页无法直接访问（需登录），请在 App 内点击右上角「…」→「分享」→「复制链接」，粘贴 xhslink.com/m/… 格式的分享链接',
+        error: '小红书主页直链只有在包含 xsec_token 时才可用；否则请在 App 内点击右上角「…」→「分享」→「复制链接」，粘贴 xhslink.com/m/… 格式的分享链接',
       };
     }
 

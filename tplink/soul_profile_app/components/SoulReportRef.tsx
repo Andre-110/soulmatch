@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import {
+  getMbtiSceneAssetCandidates,
   MBTI_IP_IMAGE_FALLBACK,
   parsePrimaryMbtiCode,
   publicMbtiAssetUrl,
@@ -10,9 +11,10 @@ import {
 import { MusicPlayer } from './MusicPlayer';
 import { getRecommendedMusic } from '@/lib/musicMatcher';
 
-/** 四幕场景大图与顶部「MBTI 专属 IP」使用同一套 ipSrc，保持形象一致 */
+/** 四幕场景优先使用 MBTI 专属场景图，缺图时回退到顶部 IP 形象。 */
 const REF_SCENE_PRESETS = [
   {
+    assetKey: '起床',
     tagline: '生活的美好，藏在每一个重复的小习惯里',
     time: '🌤️ 08:00 · 晨起时刻',
     gradient: 'linear-gradient(180deg, #1a1046 0%, #2d1b80 100%)',
@@ -20,6 +22,7 @@ const REF_SCENE_PRESETS = [
     orbRight: true,
   },
   {
+    assetKey: '阅读',
     tagline: '沉浸在热爱里，时间会悄悄发光',
     time: '📖 10:30 · 品茶读书',
     gradient: 'linear-gradient(180deg, #101a46 0%, #1b3b80 100%)',
@@ -27,6 +30,7 @@ const REF_SCENE_PRESETS = [
     orbRight: false,
   },
   {
+    assetKey: '吃饭',
     tagline: '干饭不积极，思想有问题',
     time: '🍚 12:00 · 午餐时刻',
     gradient: 'linear-gradient(180deg, #461028 0%, #801b45 100%)',
@@ -34,6 +38,7 @@ const REF_SCENE_PRESETS = [
     orbRight: true,
   },
   {
+    assetKey: '独处',
     tagline: '慢下来的时光，才是生活本身',
     time: '🌙 20:00 · 晚间放松',
     gradient: 'linear-gradient(180deg, #104638 0%, #1b8065 100%)',
@@ -123,6 +128,10 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, onSave
     setIpSrc(primarySrc);
     ipFallbackOnce.current = false;
   }, [primarySrc]);
+
+  const sceneImageCandidates = REF_SCENE_PRESETS.map((scene) =>
+    getMbtiSceneAssetCandidates(mbtiIp.code, scene.assetKey).map(publicMbtiAssetUrl),
+  );
 
   const blocks = Array.isArray(analysisResult.blocks) ? analysisResult.blocks : [];
   const tags = Array.isArray(analysisResult.avatarTags) ? analysisResult.avatarTags : [];
@@ -237,10 +246,18 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, onSave
                   src={ipSrc}
                   alt={`${mbtiIp.code} 专属 IP 形象`}
                   title={`${mbtiIp.code}${mbtiIp.rawLabel && mbtiIp.rawLabel !== mbtiIp.code ? ` · ${mbtiIp.rawLabel}` : ''}`}
+                  loading="eager"
+                  fetchPriority="high"
                   onError={() => {
-                    if (!ipFallbackOnce.current && ipSrc !== fallbackSrc) {
-                      ipFallbackOnce.current = true;
+                    if (ipFallbackOnce.current) return;
+                    ipFallbackOnce.current = true;
+                    if (ipSrc !== fallbackSrc) {
+                      // 先切换到 INFJ 兜底图
                       setIpSrc(fallbackSrc);
+                    } else {
+                      // primary === fallback（如本身就是 INFJ），用时间戳强制重试
+                      const base = fallbackSrc.split('?')[0];
+                      setIpSrc(`${base}?retry=${Date.now()}`);
                     }
                   }}
                 />
@@ -389,9 +406,22 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, onSave
                 <p className="ref-rp-scene-src">来源：{b.source}</p>
                 <div className="ref-rp-scene-img">
                   <img
-                    key={`scene-${mbtiIp.code}-${idx}-${ipSrc}`}
-                    src={ipSrc}
-                    alt={`${mbtiIp.code} 专属 IP 形象`}
+                    key={`scene-${mbtiIp.code}-${idx}`}
+                    src={sceneImageCandidates[idx]?.[0] ?? ipSrc}
+                    alt={`${mbtiIp.code} ${scene.assetKey}场景图`}
+                    onError={(e) => {
+                      const img = e.currentTarget;
+                      const candidates = sceneImageCandidates[idx] ?? [];
+                      const nextIndex = Number(img.dataset.sceneCandidateIndex ?? '0') + 1;
+                      if (nextIndex < candidates.length) {
+                        img.dataset.sceneCandidateIndex = String(nextIndex);
+                        img.src = candidates[nextIndex];
+                        return;
+                      }
+                      if (img.dataset.sceneFallbackApplied === '1') return;
+                      img.dataset.sceneFallbackApplied = '1';
+                      img.src = ipSrc;
+                    }}
                   />
                 </div>
               </div>

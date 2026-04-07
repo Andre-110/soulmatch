@@ -1,5 +1,6 @@
 /**
- * 小红书：仅支持分享短链 / 个人主页 URL 直达（不注入 Cookie、不搜索）。
+ * 小红书：仅支持分享短链直达截图，不做二次跳转。
+ * 策略：打开分享链接 → 等待 2s（modal 尚未弹出）→ 立即截图 → 返回。
  */
 import fs from 'fs';
 import path from 'path';
@@ -61,13 +62,12 @@ export type XhsDirectOpenOutcome = {
   ok: boolean;
   profileUrl?: string;
   profileExcerpt?: string;
-  screenshotDataUrl?: string;  // base64 JPEG data URL（仅当 captureScreenshot=true 时返回）
+  screenshotDataUrl?: string;
   error?: string;
 };
 
 /**
- * 打开分享短链或主页 URL，跟随跳转后抓取用户主页正文（无 Cookie）。
- * captureScreenshot=true 时同时截图并在 screenshotDataUrl 返回 base64 JPEG。
+ * 打开分享短链，在登录 modal 弹出前（约 2s 内）截图，不做任何二次跳转。
  */
 export async function xhsOpenEntryUrlAndProfileExcerpt(options: {
   entryUrl: string;
@@ -92,41 +92,75 @@ export async function xhsOpenEntryUrlAndProfileExcerpt(options: {
     });
 
     const page = await context.newPage();
-    await page.goto(entryUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await page.waitForTimeout(5000);
 
-    let finalUrl = page.url();
-    if (!/\/user\/profile\/[a-f0-9]{24}/i.test(finalUrl)) {
-      const href = await page
-        .locator('a[href*="/user/profile/"]')
-        .first()
-        .getAttribute('href')
-        .catch(() => null);
-      if (href) {
-        const abs = new URL(href, finalUrl).href;
-        await page.goto(abs, { waitUntil: 'domcontentloaded', timeout: 60000 });
-        await page.waitForTimeout(4000);
-        finalUrl = page.url();
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+      // @ts-ignore
+      if (!window.chrome) {
+        // @ts-ignore
+        window.chrome = {
+          runtime: {
+            onConnect: { addListener: () => {} },
+            onMessage: { addListener: () => {} },
+          },
+        };
       }
-    }
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => {
+          const arr = [
+            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+            { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' },
+          ];
+          Object.defineProperty(arr, 'item', { value: (i: number) => arr[i] });
+          Object.defineProperty(arr, 'namedItem', { value: (n: string) => arr.find(p => p.name === n) || null });
+          Object.defineProperty(arr, 'refresh', { value: () => {} });
+          return arr;
+        },
+      });
+      Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en-US', 'en'] });
+      try {
+        // @ts-ignore
+        if (Notification && Notification.permission === 'denied') {
+          Object.defineProperty(Notification, 'permission', { get: () => 'default' });
+        }
+      } catch { /* ignore */ }
+    });
 
-    let profileUrl = finalUrl.split('?')[0];
-    const m = profileUrl.match(/\/user\/profile\/([a-f0-9]{24})/i);
-    if (m) {
-      profileUrl = `https://www.xiaohongshu.com/user/profile/${m[1]}`;
-    }
+    // 打开分享链接，等 DOM 内容加载完毕（JS 开始执行，但 modal 还未来得及弹出）
+    await page.goto(entryUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-    const profileExcerpt = await scrapeProfileExcerpt(page);
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 
-    // 截图（向下滚动一次，保证笔记区域可见）
+    // 立刻截图（0ms 等待）：domcontentloaded 后内容已在 DOM，modal 定时器尚未触发
+    const earlyBuf = await page.screenshot({ fullPage: false, type: 'jpeg' }).catch(() => null);
+
+    // 等待其余资源（图片等）加载，同时尝试关闭可能弹出的 modal
+    await page.waitForTimeout(2000);
+    try {
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+      const closeBtn = page.locator(
+        '[class*="close" i], [class*="Close" i], [aria-label="关闭"], [aria-label="close" i], ' +
+        'button:has-text("×"), button:has-text("✕")'
+      ).first();
+      if (await closeBtn.isVisible({ timeout: 500 }).catch(() => false)) {
+        await closeBtn.click({ timeout: 1000 }).catch(() => {});
+        await page.waitForTimeout(300);
+      }
+    } catch { /* ignore */ }
+
+    const lateBuf = await page.screenshot({ fullPage: false, type: 'jpeg' }).catch(() => null);
+
+    // 用内容更多的那张（文件更大 = 加载了更多图片内容）
+    const buf = (() => {
+      if (!earlyBuf) return lateBuf;
+      if (!lateBuf) return earlyBuf;
+      return lateBuf.length > earlyBuf.length * 1.1 ? lateBuf : earlyBuf;
+    })();
+
     let screenshotDataUrl: string | undefined;
-    if (captureScreenshot || screenshotDir) {
-      try {
-        await page.evaluate(() => window.scrollBy(0, 300));
-        await page.waitForTimeout(800);
-      } catch { /* ignore */ }
-      const buf = await page.screenshot({ fullPage: false, type: 'jpeg' });
+    if (buf) {
       if (captureScreenshot) {
         screenshotDataUrl = `data:image/jpeg;base64,${buf.toString('base64')}`;
       }
@@ -136,18 +170,27 @@ export async function xhsOpenEntryUrlAndProfileExcerpt(options: {
       }
     }
 
+    const finalUrl = page.url();
+    const profileUrl = finalUrl.split('?')[0];
+    const profileExcerpt = await scrapeProfileExcerpt(page);
+
     await browser.close();
     browser = undefined;
 
+    // 检测是否落在登录页（分享链接失效或被强制跳转）
     const looksLikeLogin =
       /\/login/i.test(finalUrl) ||
-      /手机号登录|获取验证码|登录后推荐|我已阅读并同意.*用户协议/i.test(profileExcerpt);
+      /手机号登录|获取验证码|登录后推荐|我已阅读并同意.*用户协议/i.test(profileExcerpt) ||
+      (/创作中心.*业务合作.*发现.*直播|发现\s*直播\s*发布\s*通知\s*登录/.test(profileExcerpt) &&
+        !/粉丝|关注|获赞|笔记/.test(profileExcerpt));
+
     if (looksLikeLogin) {
       return {
         ok: false,
-        profileUrl: finalUrl.split('?')[0],
+        profileUrl,
         profileExcerpt,
-        error: '页面为登录页或未展开主页（可检查短链解析是否得到带 token 的主页 URL）',
+        screenshotDataUrl,
+        error: '分享链接跳转到登录页，截图已保留供视觉分析',
       };
     }
 

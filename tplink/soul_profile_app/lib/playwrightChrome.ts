@@ -9,8 +9,13 @@ export function resolveChromePath(): string {
   return '/usr/bin/google-chrome';
 }
 
-/** 无 root / CI / 容器环境常见所需 */
+/** 无 root / CI / 容器环境常见所需，同时移除 Automation 特征降低反爬检测概率 */
 export const CHROME_HEADLESS_BASE_ARGS = [
   '--no-sandbox',
   '--disable-setuid-sandbox',
+  // 移除 AutomationControlled 特征（XHS/抖音等平台会检测该标志）
+  '--disable-blink-features=AutomationControlled',
+  // 避免 headless-specific 指纹
+  '--disable-features=IsolateOrigins',
+  '--disable-site-isolation-trials',
 ] as const;

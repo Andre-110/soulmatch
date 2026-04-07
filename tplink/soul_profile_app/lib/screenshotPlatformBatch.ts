@@ -124,14 +124,26 @@ export async function screenshotMultiplePlatforms(
 
       const page = await context.newPage();
 
-      // 针对抖音和小红书，添加更多反检测措施
+      // 针对抖音和小红书，全面隐藏 headless/automation 特征
       if (platform === 'douyin' || platform === 'xhs') {
         await page.addInitScript(() => {
-          // 隐藏 webdriver 特征
           Object.defineProperty(navigator, 'webdriver', { get: () => false });
-          // 伪装 Chrome
-          Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-          Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en'] });
+          // @ts-ignore
+          if (!window.chrome) window.chrome = { runtime: { onConnect: { addListener: () => {} }, onMessage: { addListener: () => {} } } };
+          Object.defineProperty(navigator, 'plugins', {
+            get: () => {
+              const arr: any[] = [
+                { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: '' },
+                { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+                { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' },
+              ];
+              arr.item = (i: number) => arr[i];
+              arr.namedItem = (n: string) => arr.find((p: any) => p.name === n) || null;
+              arr.refresh = () => {};
+              return arr;
+            },
+          });
+          Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en-US', 'en'] });
         });
       }
 

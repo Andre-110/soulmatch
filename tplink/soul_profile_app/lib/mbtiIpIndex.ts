@@ -23,6 +23,7 @@ export const MBTI_16 = [
 ] as const;
 
 export type MbtiCode = (typeof MBTI_16)[number];
+export type MbtiSceneKey = '起床' | '阅读' | '吃饭' | '独处';
 
 /** 映射路径 404 或文件缺失时前端回退用（与 DEFAULT_CODE 一致） */
 export const MBTI_IP_IMAGE_FALLBACK = '/mbti-ip/INFJ.png';
@@ -81,6 +82,13 @@ export type MbtiIpDisplay = {
   rawLabel: string;
 };
 
+const MBTI_SCENE_IMAGE_ALIASES: Record<MbtiSceneKey, string[]> = {
+  起床: ['起床'],
+  阅读: ['阅读', '看书'],
+  吃饭: ['吃饭'],
+  独处: ['独处'],
+};
+
 export function resolveMbtiIpFromReport(mbtiRaw: string | undefined | null): MbtiIpDisplay {
   const rawLabel = (mbtiRaw ?? '').trim() || '—';
   const code = parsePrimaryMbtiCode(mbtiRaw) ?? DEFAULT_CODE;
@@ -92,9 +100,22 @@ export function resolveMbtiIpFromReport(mbtiRaw: string | undefined | null): Mbt
 }
 
 /**
- * 前端展示用：给 `/mbti-ip/*.png` 加固定 query，避免浏览器长期缓存旧图、与历史「绿叶 mascot」资源混淆。
+ * 前端展示用：给 `/mbti-ip/*.png` 加版本号，避免浏览器使用旧缓存。
+ * uniform=3 → 上一轮 uniform=2 的旧缓存（含可能的错误响应）会被浏览器视为不同资源而重新拉取。
  */
 export function publicMbtiAssetUrl(path: string): string {
   const clean = path.split('?')[0];
-  return `${clean}?uniform=2`;
+  return `${clean}?uniform=3`;
+}
+
+export function getMbtiSceneAssetPath(code: MbtiCode, scene: MbtiSceneKey): string {
+  const variants = MBTI_SCENE_IMAGE_ALIASES[scene];
+  const fileName = `${code}_${variants[0]}.png`;
+  return `/mbti-scene-assets/${code}/${fileName}`;
+}
+
+export function getMbtiSceneAssetCandidates(code: MbtiCode, scene: MbtiSceneKey): string[] {
+  return MBTI_SCENE_IMAGE_ALIASES[scene].map(
+    (variant) => `/mbti-scene-assets/${code}/${code}_${variant}.png`,
+  );
 }

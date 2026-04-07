@@ -272,16 +272,32 @@ export async function scrapeDouban(peopleId: string, profileUrl: string): Promis
 }
 
 export async function scrapeXhs(_keyword: string, profileUrl: string): Promise<ScrapeOutcome> {
-  if (!isXhsShareLink(profileUrl)) {
-    logScrape('xhs', '非 xhslink.com 短链，跳过（需用 App 分享链接）', { profileUrl: profileUrl.slice(0, 80) });
+  // 判断 URL 类型：分享短链 or 直链 or 其他
+  const isShareLink = isXhsShareLink(profileUrl);
+  const isDirectProfileLink = /xiaohongshu\.com\/user\/profile\//i.test(profileUrl);
+  const hasXsecToken = /[?&]xsec_token=/i.test(profileUrl);
+
+  if (!isShareLink && !isDirectProfileLink) {
+    logScrape('xhs', '非小红书链接，跳过', { profileUrl: profileUrl.slice(0, 80) });
     return { platform: 'xhs', url: profileUrl, ok: false, excerpt: '', method: 'invalid-xhs-url' };
   }
 
   try {
-    // 1. HTTP 解析短链 → 带 xsec_token 的完整主页 URL
-    const resolvedProfilePageUrl = await resolveXhsShareLinkToProfileUrl(profileUrl);
-    const entryForBrowser = resolvedProfilePageUrl || profileUrl;
-    logScrape('xhs', '短链已解析', { resolved: (resolvedProfilePageUrl ?? '未解析到').slice(0, 100) });
+    let entryForBrowser = profileUrl;
+
+    if (isShareLink) {
+      // 分享短链：先 HTTP 解析拿带 xsec_token 的完整 URL
+      const resolvedProfilePageUrl = await resolveXhsShareLinkToProfileUrl(profileUrl);
+      entryForBrowser = resolvedProfilePageUrl || profileUrl;
+      logScrape('xhs', '短链已解析', { resolved: (resolvedProfilePageUrl ?? '未解析到').slice(0, 100) });
+    } else if (hasXsecToken) {
+      logScrape('xhs', '带 xsec_token 的主页直链，按真实分享落地页处理', {
+        profileUrl: profileUrl.slice(0, 100),
+      });
+    } else {
+      // 直链：直接用，能看多少算多少
+      logScrape('xhs', '直链模式（无 xsec_token，内容可能受限）', { profileUrl: profileUrl.slice(0, 80) });
+    }
 
     // 2. 用 Playwright 打开主页，获取正文 + 截图（一次浏览器会话完成两件事）
     const direct = await xhsOpenEntryUrlAndProfileExcerpt({
@@ -298,16 +314,33 @@ export async function scrapeXhs(_keyword: string, profileUrl: string): Promise<S
         ok: true,
         excerpt: clip(direct.profileExcerpt),
         method: 'xhs-share-link',
-        screenshotDataUrl: direct.screenshotDataUrl,  // scrape 阶段已截图，batch 阶段会跳过
-        screenshotId: '__done__',                     // 告知 batch 无需重复截图
+        screenshotDataUrl: direct.screenshotDataUrl,
+        screenshotId: '__done__', // 告知 batch 无需重复截图
       };
     }
-    logScrape('xhs', '分享链直达未拿到足够正文', { err: direct.error });
+    // 登录 modal / 发现页 / 正文过短 — 仍阻止 batch（batch 用同一 URL 也会遇到登录墙）
+    logScrape('xhs', '分享链直达未拿到足够正文，跳过 batch 截图', { err: direct.error });
+    return {
+      platform: 'xhs',
+      url: direct.profileUrl || profileUrl,
+      ok: false,
+      excerpt: '该平台需要登录后才能查看完整主页，截图数据已作为视觉线索纳入分析。',
+      method: 'xhs-share-failed',
+      screenshotDataUrl: direct.screenshotDataUrl, // 即使失败也保留早截图
+      screenshotId: '__done__',                    // 阻止 batch 再次尝试（必然失败）
+    };
   } catch (error) {
     console.error('[XHS] 分享链接直达失败:', error);
   }
 
-  return { platform: 'xhs', url: profileUrl, ok: false, excerpt: '', method: 'xhs-share-failed' };
+  return {
+    platform: 'xhs',
+    url: profileUrl,
+    ok: false,
+    excerpt: '该平台需要登录后才能查看完整主页，截图数据已作为视觉线索纳入分析。',
+    method: 'xhs-share-failed',
+    screenshotId: '__done__', // 无论如何阻止 batch
+  };
 }
 
 export async function scrapeDouyin(secUid: string, profileUrl: string): Promise<ScrapeOutcome> {
