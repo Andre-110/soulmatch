@@ -1551,6 +1551,35 @@ p.subtitle {
     margin-bottom: 10px;
 }
 
+.ref-rp-top-insights {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.ref-rp-top-insight {
+    padding: 10px 8px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    text-align: center;
+}
+
+.ref-rp-top-insight span {
+    display: block;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.72);
+    margin-bottom: 4px;
+}
+
+.ref-rp-top-insight strong {
+    display: block;
+    font-size: 13px;
+    color: #fff;
+    line-height: 1.35;
+}
+
 .ref-rp-ip-summary {
     font-size: 15px;
     line-height: 1.65;
@@ -1664,9 +1693,9 @@ p.subtitle {
 }
 
 .ref-rp-celeb-desc {
-    font-size: 10px;
+    font-size: 11px;
     color: rgba(255, 255, 255, 0.88);
-    line-height: 1.25;
+    line-height: 1.45;
 }
 
 .ref-rp-bounce-tip {
@@ -2701,5 +2730,9 @@ h1.title.ref-home-title {
 
     .ref-platform-actions {
         flex-direction: column;
+    }
+
+    .ref-rp-top-insights {
+        grid-template-columns: 1fr;
     }
 }

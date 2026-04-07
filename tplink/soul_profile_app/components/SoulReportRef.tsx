@@ -210,6 +210,14 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, matchI
   const overallPreview =
     overallTrim.length > 120 && !showFullOverall ? `${overallTrim.slice(0, 120)}…` : overallTrim;
   const matchIntentLabel = matchIntent?.trim() || '同频搭子';
+  const topInsightCards = [
+    { label: '核心气质', value: mainTag },
+    { label: '相处感受', value: secondTag },
+    { label: '当前目标', value: matchIntentLabel },
+  ];
+  const conciseSummary = overallTrim
+    ? overallTrim.split(/[。！？\n]/).map((item) => item.trim()).filter(Boolean).slice(0, 2)
+    : [];
   const digitalMoments = [
     {
       time: '07:30 · 晨起',
@@ -274,11 +282,21 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, matchI
                 </div>
                 <div className="ref-rp-ip-tag">{analysisResult.title}</div>
                 {user?.name ? <div className="ref-rp-user-name">{user.name}</div> : null}
+                <div className="ref-rp-top-insights">
+                  {topInsightCards.map((card) => (
+                    <div key={card.label} className="ref-rp-top-insight">
+                      <span>{card.label}</span>
+                      <strong>{card.value}</strong>
+                    </div>
+                  ))}
+                </div>
                 {analysisResult.overall ? (
                   <div className="ref-rp-ip-summary">
-                    {overallPreview.split('\n').map((line: string, i: number) => (
-                      <p key={i}>{line || '\u00A0'}</p>
-                    ))}
+                    {showFullOverall
+                      ? overallPreview.split('\n').map((line: string, i: number) => (
+                          <p key={i}>{line || '\u00A0'}</p>
+                        ))
+                      : conciseSummary.map((line, i) => <p key={i}>{line}</p>)}
                     {overallTrim.length > 120 ? (
                       <button
                         type="button"
@@ -306,7 +324,7 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, matchI
             <div className="ref-rp-celeb-wrap">
               <div className="ref-rp-celeb-group">
                 <div className="ref-rp-celeb-title">
-                  <span>🌟</span> 和你灵魂高度契合的名人
+                  <span>🌟</span> 气质参考
                 </div>
                 {hasLlmCelebrities ? (
                   <div className="ref-rp-celeb-grid">
@@ -317,9 +335,6 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, matchI
                         </div>
                         <div className="ref-rp-celeb-name">{c.name}</div>
                         <div className="ref-rp-celeb-desc">{c.angle}</div>
-                        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)', marginTop: '6px', lineHeight: '1.4' }}>
-                          {c.evidence.slice(0, 80)}{c.evidence.length > 80 ? '…' : ''}
-                        </div>
                       </div>
                     ))}
                   </div>
