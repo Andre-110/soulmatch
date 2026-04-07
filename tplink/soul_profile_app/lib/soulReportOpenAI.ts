@@ -38,6 +38,10 @@ function visionKeyMatchesBlock(key: string, blockSource: string): boolean {
   return label ? blockSource.includes(label) : false;
 }
 
+function isUserUploadVisionKey(key: string): boolean {
+  return /^user_upload_\d+$/i.test(key);
+}
+
 function blockIcon(platform: string): string {
   if (platform === 'netease' || platform === 'douyin') return '🎵';
   if (platform === 'douban') return '🎬';
@@ -482,11 +486,16 @@ export async function tryOpenAISoulReport(
     const visionMap = await callVisionEnhancement(apiKey, baseUrl, model, keys, screenshotDataUrls);
 
     if (visionMap && visionMap.size > 0) {
+      const userUploadVisionDescriptions = [...visionMap.entries()]
+        .filter(([key, value]) => isUserUploadVisionKey(key) && typeof value === 'string' && value.length > 20)
+        .map(([, value]) => value.trim());
+
       // 用视觉描述替换第一轮生成的 block description（视觉信息优先，更可靠）
-      report = {
+      let nextReport: SoulReport = {
         ...report,
         blocks: report.blocks.map((block) => {
           for (const [key, vDesc] of visionMap.entries()) {
+            if (isUserUploadVisionKey(key)) continue;
             if (visionKeyMatchesBlock(key, block.source)) {
               // 验证码 / 404 / 网络错误 / 截图不可用：保留第一轮基于「正文摘录」的 description，避免把好摘录换成「未连接服务器」
               if (
@@ -505,6 +514,46 @@ export async function tryOpenAISoulReport(
           return block;
         }),
       };
+      if (userUploadVisionDescriptions.length > 0) {
+        const mergedUserUploadDescription = userUploadVisionDescriptions
+          .slice(0, 3)
+          .join('\n\n')
+          .slice(0, 2000);
+        const hitIndex = nextReport.blocks.findIndex((block) =>
+          /你上传的截图|手传图|视觉线索|上传的图片/.test(`${block.source} ${block.title}`),
+        );
+        if (hitIndex >= 0) {
+          nextReport = {
+            ...nextReport,
+            blocks: nextReport.blocks.map((block, index) =>
+              index === hitIndex
+                ? {
+                    ...block,
+                    source: '你上传的截图·视觉线索',
+                    title: '你上传的画面里透露出的气质',
+                    description: mergedUserUploadDescription,
+                    tags: block.tags?.length ? block.tags : ['手传图', '视觉'],
+                  }
+                : block,
+            ),
+          };
+        } else {
+          nextReport = {
+            ...nextReport,
+            blocks: [
+              ...nextReport.blocks,
+              {
+                source: '你上传的截图·视觉线索',
+                icon: '📷',
+                tags: ['手传图', '视觉'],
+                title: '你上传的画面里透露出的气质',
+                description: mergedUserUploadDescription,
+              },
+            ],
+          };
+        }
+      }
+      report = nextReport;
       console.log(`[OpenAI] 视觉增强完成，命中平台: ${[...visionMap.keys()].join(', ')}`);
     }
   }

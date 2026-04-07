@@ -9,6 +9,18 @@ import {
   type BrowserExtensionCookie,
 } from '@/lib/browserExtensionCookies';
 
+type MockPlugin = {
+  name: string;
+  filename: string;
+  description: string;
+};
+
+type MockPluginArray = MockPlugin[] & {
+  item: (index: number) => MockPlugin | undefined;
+  namedItem: (name: string) => MockPlugin | null;
+  refresh: () => void;
+};
+
 /** 小红书截图不注入 Cookie；其余平台与原先一致（含抖音 cookies (20).json 等） */
 const COOKIE_FILES: Partial<Record<PlatformKey, string>> = {
   weibo:   'cookies (7).json',
@@ -132,13 +144,13 @@ export async function screenshotMultiplePlatforms(
           if (!window.chrome) window.chrome = { runtime: { onConnect: { addListener: () => {} }, onMessage: { addListener: () => {} } } };
           Object.defineProperty(navigator, 'plugins', {
             get: () => {
-              const arr: any[] = [
+              const arr = [
                 { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: '' },
                 { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
                 { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' },
-              ];
+              ] as MockPluginArray;
               arr.item = (i: number) => arr[i];
-              arr.namedItem = (n: string) => arr.find((p: any) => p.name === n) || null;
+              arr.namedItem = (n: string) => arr.find((p) => p.name === n) || null;
               arr.refresh = () => {};
               return arr;
             },

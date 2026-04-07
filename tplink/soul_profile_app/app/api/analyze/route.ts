@@ -34,6 +34,16 @@ type UploadRow = {
   createdAt: Date;
 };
 
+const MAX_USER_TEXTS = 6;
+const MAX_SCRAPE_EXCERPT_CHARS = 2200;
+const MAX_PLATFORM_SHOTS_FOR_VISION = 4;
+const MAX_USER_SHOTS_FOR_VISION = 4;
+
+function clipForContext(text: string, max: number): string {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  return normalized.length <= max ? normalized : `${normalized.slice(0, max)}…`;
+}
+
 function pickLatestPlatformUploads(uploads: UploadRow[]): UploadRow[] {
   const latestByType = new Map<string, UploadRow>();
   for (const u of uploads) {
@@ -108,7 +118,7 @@ export async function POST() {
           seenTexts.add(t);
           return true;
         })
-        .slice(0, 10);  // 最多 10 条，防止塞爆 context
+        .slice(0, MAX_USER_TEXTS);
       const matchIntent =
         [...uploads]
           .reverse()
@@ -121,7 +131,7 @@ export async function POST() {
       ];
       for (const o of scrapes) {
         contextParts.push(
-          `\n【${scrapeOutcomeToDisplayName(o)}】\n链接：${o.url}\n抓取结果：${o.ok ? '有正文' : '无有效正文'}（${o.method || 'unknown'}）\n正文摘录：\n${o.excerpt || '（空）'}\n`
+          `\n【${scrapeOutcomeToDisplayName(o)}】\n链接：${o.url}\n抓取结果：${o.ok ? '有正文' : '无有效正文'}（${o.method || 'unknown'}）\n正文摘录：\n${clipForContext(o.excerpt || '（空）', MAX_SCRAPE_EXCERPT_CHARS)}\n`,
         );
       }
       for (const t of userTexts) {
@@ -137,7 +147,7 @@ export async function POST() {
 
       if (screenshotCount > 0) {
         contextParts.push(
-          `\n【用户手传截图】共 ${screenshotCount} 张（建档第一步上传，已随本请求以图片消息附在文字材料之后）。必须为这些图片写一个独立 block（source 含「你上传的截图·视觉线索」），描述可见的界面、文字与气质。\n`,
+          `\n【用户手传截图】共 ${screenshotCount} 张（建档第一步上传，已随本请求以图片消息附在文字材料之后）。为了控制时延，本次会抽取其中最多 ${MAX_USER_SHOTS_FOR_VISION} 张代表图进入视觉分析，但报告里仍要保留独立 block（source 含「你上传的截图·视觉线索」），描述整体可见的界面、文字与气质。\n`,
         );
       }
       const context = contextParts.join('');
@@ -146,11 +156,12 @@ export async function POST() {
       emit({ type: 'stage', stage: 'vision', message: '正在解读截图里的视觉细节…' });
       const platformShotsWithKey = scrapes
         .filter((o) => o.screenshotDataUrl)
+        .slice(0, MAX_PLATFORM_SHOTS_FOR_VISION)
         .map((o) => ({ key: o.platform, dataUrl: o.screenshotDataUrl as string }));
-      const platformShotKeys: string[] = platformShotsWithKey.map((p) => p.key);
+      const screenshotKeys: string[] = platformShotsWithKey.map((p) => p.key);
       const screenshotDataUrls: string[] = platformShotsWithKey.map((p) => p.dataUrl);
 
-      for (const s of userScreenshots) {
+      for (const [index, s] of userScreenshots.slice(0, MAX_USER_SHOTS_FOR_VISION).entries()) {
         try {
           const rel = (s.url || '').replace(/^\/+/, '');
           if (!rel.startsWith('uploads/')) continue;
@@ -158,13 +169,14 @@ export async function POST() {
           const buf = fs.readFileSync(filePath);
           const ext = path.extname(s.url!).slice(1).toLowerCase() || 'png';
           const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
+          screenshotKeys.push(`user_upload_${index + 1}`);
           screenshotDataUrls.push(`data:${mime};base64,${buf.toString('base64')}`);
         } catch { /* 文件不存在则跳过 */ }
       }
 
       const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
       emit({ type: 'stage', stage: 'prompting', message: 'AI 正在生成你的画像与匹配建议…' });
-      let report = await tryOpenAISoulReport(context, screenshotDataUrls, platformShotKeys, scrapes);
+      let report = await tryOpenAISoulReport(context, screenshotDataUrls, screenshotKeys, scrapes);
       const reportSource = report ? 'openai' : 'fallback';
       if (!report) {
         report = buildFallbackSoulReport({ scrapes, userTexts, screenshotCount });
