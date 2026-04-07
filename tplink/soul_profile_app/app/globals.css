@@ -2426,3 +2426,274 @@ h1.title.ref-home-title {
     margin-bottom: 16px;
     padding: 0 4px;
 }
+
+.ref-platform-actions {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.ref-inline-action {
+    padding: 10px 12px;
+    font-size: 13px;
+    border-radius: 14px;
+}
+
+.ref-chat-stage-pill {
+    display: inline-flex;
+    margin-bottom: 18px;
+}
+
+.ref-intent-card {
+    margin: 14px 0 16px;
+    padding: 16px;
+    border-radius: 20px;
+    background: rgba(18, 10, 35, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.ref-intent-head {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 12px;
+}
+
+.ref-intent-head strong {
+    font-size: 15px;
+}
+
+.ref-intent-head span {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.ref-intent-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.ref-intent-option {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    text-align: left;
+    border-radius: 16px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ref-intent-option strong {
+    font-size: 14px;
+}
+
+.ref-intent-option span {
+    font-size: 11px;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.ref-intent-option.active {
+    border-color: rgba(250, 243, 182, 0.86);
+    background: rgba(250, 243, 182, 0.16);
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.16);
+}
+
+.ref-loading-progress {
+    width: 100%;
+    max-width: 360px;
+    margin-top: 8px;
+    padding: 0 24px;
+}
+
+.ref-loading-progress-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.86);
+}
+
+.ref-loading-progress-track {
+    width: 100%;
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    overflow: hidden;
+}
+
+.ref-loading-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #FAF3B6 0%, #9d6fff 100%);
+    transition: width 0.35s ease;
+}
+
+.ref-loading-eta {
+    margin-top: 8px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.68);
+}
+
+.ref-loading-stage-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 24px;
+    width: 100%;
+    padding: 0 32px;
+}
+
+.ref-loading-stage-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.42);
+}
+
+.ref-loading-stage-item.done {
+    color: rgba(0, 255, 120, 0.92);
+}
+
+.ref-loading-stage-item.current {
+    color: rgba(255, 255, 255, 0.94);
+}
+
+.ref-loading-stage-icon {
+    width: 16px;
+    text-align: center;
+}
+
+.ref-guide-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+}
+
+.ref-guide-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(8, 6, 18, 0.66);
+    backdrop-filter: blur(4px);
+}
+
+.ref-guide-panel {
+    position: relative;
+    width: min(100%, 480px);
+    max-height: 82vh;
+    overflow-y: auto;
+    padding: 22px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    border-radius: 28px 28px 0 0;
+    background: linear-gradient(180deg, rgba(61, 32, 104, 0.98) 0%, rgba(42, 24, 75, 0.98) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.ref-guide-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.ref-guide-header p {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.55;
+    color: rgba(255, 255, 255, 0.74);
+}
+
+.ref-guide-close {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    font-size: 24px;
+}
+
+.ref-guide-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.ref-guide-step-card {
+    display: flex;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.ref-guide-step-card > span {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: rgba(250, 243, 182, 0.18);
+    color: #FAF3B6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.ref-guide-step-card p,
+.ref-guide-step-card a {
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.ref-guide-step-card a {
+    color: #FAF3B6;
+}
+
+.ref-guide-example {
+    margin-bottom: 16px;
+    padding: 14px;
+    border-radius: 18px;
+    background: rgba(0, 0, 0, 0.16);
+}
+
+.ref-guide-example strong {
+    display: block;
+    margin-bottom: 8px;
+}
+
+.ref-guide-example p {
+    font-size: 12px;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.76);
+    word-break: break-all;
+}
+
+.ref-rp-summary-toggle {
+    margin-top: 10px;
+    border: none;
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+@media (max-width: 420px) {
+    .ref-intent-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ref-platform-actions {
+        flex-direction: column;
+    }
+}

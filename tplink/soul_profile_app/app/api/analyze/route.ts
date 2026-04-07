@@ -71,7 +71,11 @@ export async function POST() {
     /** 长任务期间定时输出一行 JSON，避免 Nginx/反代因「长时间无响应」返回 502 */
     const stream = new ReadableStream({
       async start(controller) {
+        const emit = (payload: Record<string, unknown>) => {
+          controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
+        };
         controller.enqueue(encoder.encode('{"type":"ack"}\n'));
+        emit({ type: 'stage', stage: 'queued', message: '已接收请求，准备开始分析…' });
         const pingIv = setInterval(() => {
           try {
             controller.enqueue(encoder.encode('{"type":"ping"}\n'));
@@ -81,12 +85,14 @@ export async function POST() {
         }, 12_000);
         try {
           const payload = await runAnalyzeTask(userId, async () => {
+      emit({ type: 'stage', stage: 'gathering', message: '正在整理你刚刚提交的素材…' });
       const uploads = await prisma.upload.findMany({
         where: { userId },
         orderBy: { createdAt: 'asc' },
       });
 
       const platformUploadsLatest = pickLatestPlatformUploads(uploads);
+      emit({ type: 'stage', stage: 'scraping', message: '正在连接平台并提取可用线索…' });
       const scrapes = await scrapeFromPlatformUploads(platformUploadsLatest);
       console.log(
         `[Analyze] userId=${userId} 全量上传=${uploads.length}，平台去重后=${platformUploadsLatest.length}，抓取摘要: ${summarizeScrapesForLog(scrapes)}`,
@@ -103,6 +109,10 @@ export async function POST() {
           return true;
         })
         .slice(0, 10);  // 最多 10 条，防止塞爆 context
+      const matchIntent =
+        [...uploads]
+          .reverse()
+          .find((u) => u.type === 'match-intent' && (u.content || '').trim())?.content?.trim() ?? '';
 
       const screenshotCount = uploads.filter((u) => u.type === 'screenshot' && u.url).length;
 
@@ -117,6 +127,11 @@ export async function POST() {
       for (const t of userTexts) {
         contextParts.push(`\n【用户自述】\n${t}\n`);
       }
+      if (matchIntent) {
+        contextParts.push(
+          `\n【交友偏好】\n用户这次更想找：${matchIntent}。在输出匹配建议、关系氛围与适合对象时，请优先贴合这个目标，不要泛泛而谈。\n`,
+        );
+      }
       const userScreenshots = uploads.filter((u) => u.type === 'screenshot' && u.url);
       const userScreenshotUrls = userScreenshots.map((u) => u.url).filter((u): u is string => !!u);
 
@@ -128,6 +143,7 @@ export async function POST() {
       const context = contextParts.join('');
 
       // 平台截图（Playwright 抓取的）→ 再拼接用户手传图；二者顺序须与 context 说明一致
+      emit({ type: 'stage', stage: 'vision', message: '正在解读截图里的视觉细节…' });
       const platformShotsWithKey = scrapes
         .filter((o) => o.screenshotDataUrl)
         .map((o) => ({ key: o.platform, dataUrl: o.screenshotDataUrl as string }));
@@ -147,6 +163,7 @@ export async function POST() {
       }
 
       const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+      emit({ type: 'stage', stage: 'prompting', message: 'AI 正在生成你的画像与匹配建议…' });
       let report = await tryOpenAISoulReport(context, screenshotDataUrls, platformShotKeys, scrapes);
       const reportSource = report ? 'openai' : 'fallback';
       if (!report) {
@@ -169,6 +186,7 @@ export async function POST() {
         openaiModel: reportSource === 'openai' ? openaiModel : undefined,
       });
 
+      emit({ type: 'stage', stage: 'saving', message: '正在整理结构并写入档案…' });
       await prisma.profile.create({
         data: buildProfileNormalizedCreate({
           userId,

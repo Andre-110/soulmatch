@@ -64,6 +64,87 @@ async function readAnalyzeNdjsonStream(res: Response): Promise<{
   return done;
 }
 
+type AnalyzeStageKey =
+  | 'queued'
+  | 'gathering'
+  | 'scraping'
+  | 'vision'
+  | 'prompting'
+  | 'saving'
+  | 'done';
+
+type AnalyzeStageEvent = {
+  type: 'stage';
+  stage: AnalyzeStageKey;
+  message?: string;
+};
+
+async function readAnalyzeNdjsonStreamWithEvents(
+  res: Response,
+  options?: {
+    onStage?: (event: AnalyzeStageEvent) => void;
+  },
+): Promise<{
+  report: unknown;
+  userScreenshotUrls: string[];
+  mbtiIp: unknown;
+}> {
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error('无法读取响应');
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let done: {
+    report: unknown;
+    userScreenshotUrls: string[];
+    mbtiIp: unknown;
+  } | null = null;
+  let errPayload: { status?: number; error?: string } | null = null;
+  const consumeLine = (raw: string) => {
+    const t = raw.trim();
+    if (!t) return;
+    const j = JSON.parse(t) as {
+      type?: string;
+      stage?: AnalyzeStageKey;
+      message?: string;
+      status?: number;
+      error?: string;
+      report?: unknown;
+      userScreenshotUrls?: string[];
+      mbtiIp?: unknown;
+    };
+    if (j.type === 'stage' && j.stage) {
+      options?.onStage?.({ type: 'stage', stage: j.stage, message: j.message });
+      return;
+    }
+    if (j.type === 'done' && j.report !== undefined) {
+      done = {
+        report: j.report,
+        userScreenshotUrls: Array.isArray(j.userScreenshotUrls) ? j.userScreenshotUrls : [],
+        mbtiIp: j.mbtiIp ?? null,
+      };
+    }
+    if (j.type === 'error') errPayload = { status: j.status, error: j.error };
+  };
+  while (true) {
+    const { value, done: streamDone } = await reader.read();
+    if (value) buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) consumeLine(line);
+    if (streamDone) {
+      if (buffer.trim()) consumeLine(buffer);
+      break;
+    }
+  }
+  if (errPayload) {
+    const e = new Error(errPayload.error || '请求错误') as Error & { status?: number };
+    e.status = errPayload.status;
+    throw e;
+  }
+  if (!done) throw new Error('未收到分析结果');
+  return done;
+}
+
 const TOTAL_ONBOARD_STEPS = 3;
 
 const PLATFORM_EXAMPLES: Record<PlatformKey, string> = {
@@ -140,6 +221,26 @@ const DEBUG_DEFAULT_EMAIL = 'debug@soulmatch.local';
 const DEBUG_DEFAULT_PASSWORD = 'debug123456';
 const DEBUG_TEXT_STEP3 = '【Debug 模式】这是一段用于快速联调的心声示例。';
 const DEBUG_TEXT_STEP4 = '【Debug】如果明天世界末日，今晚想好好吃一顿、和在乎的人待在一起。';
+const MATCH_INTENT_OPTIONS = [
+  { value: '饭搭子', label: '饭搭子', desc: '一起吃饭、打卡，轻松陪伴' },
+  { value: '聊天搭子', label: '聊天搭子', desc: '话题投缘，能经常分享日常' },
+  { value: '旅行搭子', label: '旅行搭子', desc: '节奏合拍，愿意一起出发' },
+  { value: '兴趣搭子', label: '兴趣搭子', desc: '围绕共同爱好建立连接' },
+  { value: '恋爱对象', label: '恋爱对象', desc: '更偏长期陪伴与亲密关系' },
+] as const;
+
+const ANALYZE_STAGE_META: Record<
+  AnalyzeStageKey,
+  { label: string; percent: number; eta: string }
+> = {
+  queued: { label: '已接收请求，准备开始分析…', percent: 6, eta: '预计 40-70 秒' },
+  gathering: { label: '正在整理你刚刚提交的素材…', percent: 14, eta: '预计 35-60 秒' },
+  scraping: { label: '正在连接平台并提取可用线索…', percent: 38, eta: '预计 25-45 秒' },
+  vision: { label: '正在解读截图里的视觉细节…', percent: 58, eta: '预计 18-35 秒' },
+  prompting: { label: 'AI 正在生成你的画像与报告…', percent: 82, eta: '预计 8-20 秒' },
+  saving: { label: '正在整理结构并写入档案…', percent: 94, eta: '还差最后几秒' },
+  done: { label: '灵魂档案已生成完成', percent: 100, eta: '已完成' },
+};
 
 const SESSION_USER_SNAPSHOT_KEY = 'soulmatch_user_snapshot';
 
@@ -242,9 +343,13 @@ export default function App() {
   const [textInput3, setTextInput3] = useState('');
   /** step 4 文字输入（与 step3 合并展示） */
   const [textInput4, setTextInput4] = useState('');
+  const [questionStep, setQuestionStep] = useState<QuestionKey>('q1');
+  const [matchIntent, setMatchIntent] = useState<(typeof MATCH_INTENT_OPTIONS)[number]['value']>('饭搭子');
   /** 语音识别状态 */
   const [recordingTarget, setRecordingTarget] = useState<QuestionKey | null>(null);
   const [voiceSupported, setVoiceSupported] = useState(false);
+  const [tutorialPlatform, setTutorialPlatform] = useState<PlatformKey | null>(null);
+  const [analysisStage, setAnalysisStage] = useState<AnalyzeStageKey>('queued');
   /** 朋友圈截图 / 生活照（服务端上传记录，支持删除） */
   const [momentsUploads, setMomentsUploads] = useState<StepUploadItem[]>([]);
   const [lifePhotoUploads, setLifePhotoUploads] = useState<StepUploadItem[]>([]);
@@ -267,6 +372,7 @@ export default function App() {
     setPassword(DEBUG_DEFAULT_PASSWORD);
     setTextInput3(DEBUG_TEXT_STEP3);
     setTextInput4(DEBUG_TEXT_STEP4);
+    setMatchIntent('饭搭子');
     const nextVal: Partial<Record<PlatformKey, { ok: boolean; msg: string; url?: string }>> = {};
     for (const id of ACTIVE_PLATFORM_KEYS) {
       const val = DEBUG_PLATFORM_DEFAULTS[id];
@@ -627,14 +733,33 @@ export default function App() {
     }
   };
 
+  const copyToClipboard = async (value: string, successMessage: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setSaveMessage(successMessage);
+    } catch {
+      setSaveMessage('复制失败，请手动长按或选中复制');
+    }
+  };
+
   const submitQuestionStep = async () => {
     stopSpeechInput();
+    if (questionStep === 'q1') {
+      setQuestionStep('q2');
+      setSaveMessage('已记录第 1 题，继续回答下一题');
+      setTimeout(() => focusQuestionTextarea('q2'), 0);
+      return;
+    }
     if (textInput3.trim()) {
       const ok = await uploadText(textInput3.trim(), 'text', false);
       if (!ok) return;
     }
     if (textInput4.trim()) {
       const ok = await uploadText(textInput4.trim(), 'voice-text', false);
+      if (!ok) return;
+    }
+    if (matchIntent.trim()) {
+      const ok = await uploadText(matchIntent.trim(), 'match-intent', false);
       if (!ok) return;
     }
     startAnalysis();
@@ -724,28 +849,20 @@ export default function App() {
 
   const startAnalysis = async () => {
     setStep(6);
-    const steps = [
-      '正在连接各平台数据源…',
-      '正在读取微博、豆瓣公开信息…',
-      '正在读取网易云听歌记录…',
-      '正在获取抖音主页数据…',
-      '正在截取小红书主页…',
-      '正在分析你上传的截图…',
-      '正在整合全部线索…',
-      'AI 正在解读你的灵魂波段…',
-      '即将完成，正在生成档案…',
-    ];
-    let i = 0;
-    const timer = setInterval(() => {
-      i = Math.min(i + 1, steps.length - 1);
-      setAnalysisStatus(steps[i]);
-    }, 3500);
+    setAnalysisStage('queued');
+    setAnalysisStatus(ANALYZE_STAGE_META.queued.label);
     try {
       setUserScreenshotUrls([]);
       const res = await fetch('/api/analyze', { method: 'POST', credentials: 'include' });
       const ct = res.headers.get('content-type') || '';
       if (res.ok && ct.includes('ndjson')) {
-        const data = await readAnalyzeNdjsonStream(res);
+        const data = await readAnalyzeNdjsonStreamWithEvents(res, {
+          onStage: (event) => {
+            setAnalysisStage(event.stage);
+            setAnalysisStatus(event.message || ANALYZE_STAGE_META[event.stage].label);
+          },
+        });
+        setAnalysisStage('done');
         setAnalysisResult(
           data.report
             ? { ...(data.report as Record<string, unknown>), mbtiIp: data.mbtiIp ?? null }
@@ -761,6 +878,7 @@ export default function App() {
           mbtiIp?: unknown;
         };
         if (res.ok && data.report) {
+          setAnalysisStage('done');
           setAnalysisResult(
             data.report
               ? { ...(data.report as Record<string, unknown>), mbtiIp: data.mbtiIp ?? null }
@@ -780,11 +898,15 @@ export default function App() {
       else alert(`网络错误：${msg}`);
       setStep(3);
     } finally {
-      clearInterval(timer);
+      setQuestionStep('q1');
     }
   };
 
-  const questionButtonLabel = stepUploadProgress > 0 ? '保存中…' : '下一步 →';
+  const questionButtonLabel = stepUploadProgress > 0
+    ? '保存中…'
+    : questionStep === 'q1'
+      ? '继续下一题 →'
+      : '生成灵魂档案 →';
 
   const saveSoulPosterImage = async () => {
     const el = document.getElementById('soul-poster-capture');
@@ -953,6 +1075,22 @@ export default function App() {
             <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', wordBreak: 'break-all' }}>
               示例：{PLATFORM_EXAMPLES[id]}
             </p>
+            <div className="ref-platform-actions">
+              <button
+                type="button"
+                className="btn btn-secondary ref-inline-action"
+                onClick={() => setTutorialPlatform(id)}
+              >
+                查看示例教程
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary ref-inline-action"
+                onClick={() => void copyToClipboard(PLATFORM_EXAMPLES[id], `已复制 ${name} 示例`)}
+              >
+                复制示例
+              </button>
+            </div>
             <button type="button" className="btn btn-primary" style={{ padding: '10px', fontSize: '14px' }} disabled={!!validation && !validation.ok} onClick={() => bindPlatform(id)}>
               确认绑定
             </button>
@@ -1034,6 +1172,34 @@ export default function App() {
       : 0;
   /** 了解程度心形：与进度条保持一致 */
   const familiarityPercent = progressPercent;
+  const activeQuestion =
+    questionStep === 'q1'
+      ? {
+          key: 'q1' as const,
+          title: '人格底色深度分析',
+          body: '我是一个什么样的人？更容易被什么样的人吸引？',
+          placeholder: '输入你想说的心声…',
+          rows: 5,
+          value: textInput3,
+          onChange: setTextInput3,
+        }
+      : {
+          key: 'q2' as const,
+          title: '主观意图',
+          body: '如果明天世界末日，你今晚会做什么？',
+          placeholder: '输入你的回答…',
+          rows: 4,
+          value: textInput4,
+          onChange: setTextInput4,
+        };
+  const analyzeChecklist = [
+    { key: 'gathering', label: '整理建档素材' },
+    { key: 'scraping', label: '抓取平台公开线索' },
+    { key: 'vision', label: '分析截图与视觉信息' },
+    { key: 'prompting', label: '生成画像与匹配建议' },
+    { key: 'saving', label: '整理并保存完整报告' },
+  ] as const;
+  const currentStagePercent = ANALYZE_STAGE_META[analysisStage].percent;
 
   return (
     <div id="app" className={step === 7 ? 'app-mode-ref-report' : undefined}>
@@ -1176,76 +1342,80 @@ export default function App() {
             {step === 3 && (
               <div className="step-body ref-chat-step">
                 <h2 className="ref-chat-h1">让我更了解你吧</h2>
-                <p className="ref-chat-sub">最后两题合并成一页，填完即可生成灵魂档案。</p>
+                <p className="ref-chat-sub">一次只问你一个问题，回答完再进入下一题。</p>
+                <div className="ref-stage-pill ref-chat-stage-pill">
+                  问题 {questionStep === 'q1' ? '1' : '2'} / 2
+                </div>
                 <div className="ref-chat-row">
                   <div className="ref-chat-avatar" aria-hidden>
                     🧙
                   </div>
                   <div className="ref-chat-bubble">
-                    <div className="ref-bubble-title">人格底色深度分析</div>
-                    <div className="ref-bubble-body">
-                      我是一个什么样的人？更容易被什么样的人吸引？
-                    </div>
+                    <div className="ref-bubble-title">{activeQuestion.title}</div>
+                    <div className="ref-bubble-body">{activeQuestion.body}</div>
                   </div>
                 </div>
                 <textarea
                   id="text-input"
-                  ref={question1TextareaRef}
+                  ref={activeQuestion.key === 'q1' ? question1TextareaRef : question2TextareaRef}
                   className="glass-input ref-chat-textarea"
-                  placeholder="输入你想说的心声…"
-                  rows={5}
-                  value={textInput3}
-                  onChange={(e) => setTextInput3(e.target.value)}
+                  placeholder={activeQuestion.placeholder}
+                  rows={activeQuestion.rows}
+                  value={activeQuestion.value}
+                  onChange={(e) => activeQuestion.onChange(e.target.value)}
                 />
                 <div className="ref-chat-toolbar">
-                  <button type="button" className="ref-chat-keyboard-btn" onClick={() => focusQuestionTextarea('q1')}>
+                  <button type="button" className="ref-chat-keyboard-btn" onClick={() => focusQuestionTextarea(activeQuestion.key)}>
                     键盘输入
                   </button>
                   <button
                     type="button"
                     className="ref-chat-mic"
                     aria-label="语音输入"
-                    onClick={() => startSpeechInput('q1')}
+                    onClick={() => startSpeechInput(activeQuestion.key)}
                   >
-                    {recordingTarget === 'q1' ? '⏹' : '🎤'}
+                    {recordingTarget === activeQuestion.key ? '⏹' : '🎤'}
                   </button>
                 </div>
-                <div className="ref-chat-row">
-                  <div className="ref-chat-avatar" aria-hidden>
-                    🧙
+                {questionStep === 'q2' && (
+                  <div className="ref-intent-card">
+                    <div className="ref-intent-head">
+                      <strong>你这次更想找什么人？</strong>
+                      <span>报告会按你的目标给出更贴近的建议</span>
+                    </div>
+                    <div className="ref-intent-grid">
+                      {MATCH_INTENT_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`ref-intent-option${matchIntent === option.value ? ' active' : ''}`}
+                          onClick={() => setMatchIntent(option.value)}
+                        >
+                          <strong>{option.label}</strong>
+                          <span>{option.desc}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <div className="ref-chat-bubble">
-                    <div className="ref-bubble-title">主观意图</div>
-                    <div className="ref-bubble-body">「如果明天世界末日，你今晚会做什么？」</div>
-                  </div>
-                </div>
-                <textarea
-                  ref={question2TextareaRef}
-                  className="glass-input ref-chat-textarea"
-                  placeholder="输入你的回答…"
-                  rows={4}
-                  value={textInput4}
-                  onChange={(e) => setTextInput4(e.target.value)}
-                />
-                <div className="ref-chat-toolbar">
-                  <button type="button" className="ref-chat-keyboard-btn" onClick={() => focusQuestionTextarea('q2')}>
-                    键盘输入
-                  </button>
-                  <button
-                    type="button"
-                    className="ref-chat-mic"
-                    aria-label="语音输入"
-                    onClick={() => startSpeechInput('q2')}
-                  >
-                    {recordingTarget === 'q2' ? '⏹' : '🎤'}
-                  </button>
-                </div>
+                )}
                 <div className="ref-chat-voice-hint">
                   {voiceSupported
                     ? '点击麦克风即可同步语音输入，点击停止后自动保存。'
                     : '当前浏览器暂不支持语音输入，请直接使用键盘。'}
                 </div>
                 <div className="bottom-action">
+                  {questionStep === 'q2' && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        stopSpeechInput();
+                        setQuestionStep('q1');
+                      }}
+                    >
+                      返回上一题
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn btn-primary btn-glow"
@@ -1264,20 +1434,30 @@ export default function App() {
             <h2 className="loading-title">正在生成你的灵魂档案<br />请稍候…</h2>
             <div className="hatching-container"><div className="hatching-orb"></div></div>
             <p className="loading-status" style={{ minHeight: '48px', transition: 'opacity 0.4s', textAlign: 'center', padding: '0 24px' }}>{analysisStatus}</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '24px', width: '100%', padding: '0 32px' }}>
-              {[
-                { label: '微博', done: analysisStatus.includes('网易云') || analysisStatus.includes('抖音') || analysisStatus.includes('小红书') || analysisStatus.includes('截图') || analysisStatus.includes('整合') || analysisStatus.includes('AI') || analysisStatus.includes('完成') },
-                { label: '豆瓣', done: analysisStatus.includes('网易云') || analysisStatus.includes('抖音') || analysisStatus.includes('小红书') || analysisStatus.includes('截图') || analysisStatus.includes('整合') || analysisStatus.includes('AI') || analysisStatus.includes('完成') },
-                { label: '网易云', done: analysisStatus.includes('抖音') || analysisStatus.includes('小红书') || analysisStatus.includes('截图') || analysisStatus.includes('整合') || analysisStatus.includes('AI') || analysisStatus.includes('完成') },
-                { label: '抖音', done: analysisStatus.includes('小红书') || analysisStatus.includes('截图') || analysisStatus.includes('整合') || analysisStatus.includes('AI') || analysisStatus.includes('完成') },
-                { label: '小红书', done: analysisStatus.includes('截图') || analysisStatus.includes('整合') || analysisStatus.includes('AI') || analysisStatus.includes('完成') },
-                { label: '你上传的截图', done: analysisStatus.includes('整合') || analysisStatus.includes('AI') || analysisStatus.includes('完成') },
-              ].map(({ label, done }) => (
-                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: done ? 'rgba(0,255,120,0.9)' : 'rgba(255,255,255,0.4)' }}>
-                  <span style={{ fontSize: '16px' }}>{done ? '✓' : '⋯'}</span>
-                  <span>{label}</span>
-                </div>
-              ))}
+            <div className="ref-loading-progress">
+              <div className="ref-loading-progress-row">
+                <span>当前进度</span>
+                <span>{currentStagePercent}%</span>
+              </div>
+              <div className="ref-loading-progress-track">
+                <div className="ref-loading-progress-fill" style={{ width: `${currentStagePercent}%` }} />
+              </div>
+              <p className="ref-loading-eta">{ANALYZE_STAGE_META[analysisStage].eta}</p>
+            </div>
+            <div className="ref-loading-stage-list">
+              {analyzeChecklist.map(({ key, label }) => {
+                const stageDone = ANALYZE_STAGE_META[analysisStage].percent > ANALYZE_STAGE_META[key].percent;
+                const isCurrent = analysisStage === key;
+                return (
+                  <div
+                    key={label}
+                    className={`ref-loading-stage-item${stageDone ? ' done' : ''}${isCurrent ? ' current' : ''}`}
+                  >
+                    <span className="ref-loading-stage-icon">{stageDone ? '✓' : isCurrent ? '●' : '⋯'}</span>
+                    <span>{label}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -1287,10 +1467,52 @@ export default function App() {
             analysisResult={analysisResult}
             user={user}
             userScreenshotUrls={userScreenshotUrls}
+            matchIntent={matchIntent}
             onSaveImage={() => void saveSoulPosterImage()}
           />
         )}
       </div>
+
+      {tutorialPlatform && (
+        <div className="ref-guide-modal" role="dialog" aria-modal="true">
+          <div className="ref-guide-backdrop" onClick={() => setTutorialPlatform(null)} />
+          <div className="ref-guide-panel">
+            <div className="ref-guide-header">
+              <div>
+                <strong>{PLATFORM_NAMES[tutorialPlatform]} 绑定教程</strong>
+                <p>按下面步骤操作，再把链接或 ID 粘贴回来即可。</p>
+              </div>
+              <button type="button" className="ref-guide-close" onClick={() => setTutorialPlatform(null)}>×</button>
+            </div>
+            <div className="ref-guide-steps">
+              {PLATFORM_HINTS[tutorialPlatform].map((hint, index) => (
+                <div key={index} className="ref-guide-step-card">
+                  <span>{index + 1}</span>
+                  <div>
+                    <p>{hint.text}</p>
+                    {hint.link ? (
+                      <a href={hint.link.href} target="_blank" rel="noopener noreferrer">
+                        打开 {hint.link.label}
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="ref-guide-example">
+              <strong>示例格式</strong>
+              <p>{PLATFORM_EXAMPLES[tutorialPlatform]}</p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => void copyToClipboard(PLATFORM_EXAMPLES[tutorialPlatform], `已复制 ${PLATFORM_NAMES[tutorialPlatform]} 示例`)}
+            >
+              复制示例格式
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -106,10 +106,11 @@ type Props = {
   };
   user: { name: string } | null;
   userScreenshotUrls: string[];
+  matchIntent?: string;
   onSaveImage: () => void;
 };
 
-export function SoulReportRef({ analysisResult, user, userScreenshotUrls, onSaveImage }: Props) {
+export function SoulReportRef({ analysisResult, user, userScreenshotUrls, matchIntent, onSaveImage }: Props) {
   const mbtiIp =
     analysisResult.mbtiIp?.imageSrc != null
       ? {
@@ -122,6 +123,7 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, onSave
   const primarySrc = publicMbtiAssetUrl(mbtiIp.imageSrc);
   const fallbackSrc = publicMbtiAssetUrl(MBTI_IP_IMAGE_FALLBACK);
   const [ipSrc, setIpSrc] = useState(primarySrc);
+  const [showFullOverall, setShowFullOverall] = useState(false);
   const ipFallbackOnce = useRef(false);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -129,8 +131,9 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, onSave
     ipFallbackOnce.current = false;
   }, [primarySrc]);
 
+  const sceneCode = parsePrimaryMbtiCode(mbtiIp.code) ?? 'INFJ';
   const sceneImageCandidates = REF_SCENE_PRESETS.map((scene) =>
-    getMbtiSceneAssetCandidates(mbtiIp.code, scene.assetKey).map(publicMbtiAssetUrl),
+    getMbtiSceneAssetCandidates(sceneCode, scene.assetKey).map(publicMbtiAssetUrl),
   );
 
   const blocks = Array.isArray(analysisResult.blocks) ? analysisResult.blocks : [];
@@ -204,6 +207,9 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, onSave
   const mainTag = tags[0] ?? '天然温柔';
   const secondTag = tags[1] ?? '理性踏实';
   const thirdTag = tags[2] ?? '松弛有界';
+  const overallPreview =
+    overallTrim.length > 120 && !showFullOverall ? `${overallTrim.slice(0, 120)}…` : overallTrim;
+  const matchIntentLabel = matchIntent?.trim() || '同频搭子';
   const digitalMoments = [
     {
       time: '07:30 · 晨起',
@@ -270,9 +276,18 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, onSave
                 {user?.name ? <div className="ref-rp-user-name">{user.name}</div> : null}
                 {analysisResult.overall ? (
                   <div className="ref-rp-ip-summary">
-                    {analysisResult.overall.split('\n').map((line: string, i: number) => (
+                    {overallPreview.split('\n').map((line: string, i: number) => (
                       <p key={i}>{line || '\u00A0'}</p>
                     ))}
+                    {overallTrim.length > 120 ? (
+                      <button
+                        type="button"
+                        className="ref-rp-summary-toggle"
+                        onClick={() => setShowFullOverall((prev) => !prev)}
+                      >
+                        {showFullOverall ? '收起摘要' : '展开全文'}
+                      </button>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -489,7 +504,7 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, onSave
           style={{ background: 'linear-gradient(135deg, #6b48ff 0%, #9d6fff 100%)' }}
         >
           <h2 className="ref-rp-vip-h2">💖 为你的报告打分</h2>
-          <p className="ref-rp-vip-sub">分享报告即可领取 1 个月 VIP 会员，匹配 3 个同频搭子～</p>
+          <p className="ref-rp-vip-sub">分享报告即可领取 1 个月 VIP 会员，匹配 3 个最适合你的{matchIntentLabel}～</p>
           <div className="ref-rp-stars-row">
             {[0, 1, 2, 3, 4].map((i) => (
               <span key={i} className="ref-rp-star-btn">
@@ -502,7 +517,7 @@ export function SoulReportRef({ analysisResult, user, userScreenshotUrls, onSave
           </button>
           <div className="ref-rp-match-card">
             <p className="ref-rp-match-t">
-              已为你匹配到 <strong>3 位</strong> 同频搭子 ✨
+              已为你匹配到 <strong>3 位</strong> {matchIntentLabel} ✨
               <br />
               点击下方按钮立即查看 →
             </p>
