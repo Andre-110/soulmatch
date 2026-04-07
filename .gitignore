@@ -1,45 +1,9 @@
-# Secrets & local env
-.env
-.env.*
-!.env.example
+# 大文件
+tplink/soul_profile_app/public/music/bgm/*.mp3
 
-# Dependencies & build
-**/node_modules/
-**/.next/
-**/out/
-**/build/
-**/*.tsbuildinfo
-
-# DB & uploads (local)
-**/prisma/*.db
-**/prisma/*.db-journal
-**/public/uploads/
-**/public/debug-screenshots/
-
-# OS / IDE
-.DS_Store
-.idea/
-.vscode/
-
-# Python venvs in tree
-**/.venv*/
-**/venv/
-
-# Logs
+# 临时文件
 *.log
-npm-debug.log*
-
-# 浏览器导出 cookie（勿入库）
-**/cookies/
-*.zip
-*.csv
-*.tar.gz
-
-# 本地素材解压目录 / 中间导出物
-MBTI场景图片/
-MBTI基础形象/
-__MACOSX/
-temp_mbti/
-
-# 本地虚拟环境
-tplink/.venv-screenshot/
+.DS_Store
+node_modules/
+.next/
+.env.local
