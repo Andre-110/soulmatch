@@ -15,7 +15,10 @@ import {
   tryOpenAISoulReport,
 } from '@/lib/soulReportOpenAI';
 import { runAnalyzeTask, AnalyzeInProgressError } from '@/lib/analyzeQueue';
-import { buildProfileNormalizedCreate } from '@/lib/profilePersist';
+import {
+  buildProfileNormalizedCreate,
+  soulReportFromNormalized,
+} from '@/lib/profilePersist';
 import { buildSoulReportInputRecord } from '@/lib/soulReportRecord';
 import fs from 'fs';
 import path from 'path';
@@ -77,7 +80,24 @@ export async function POST() {
     }
 
     const userId = decoded.userId;
-    const encoder = new TextEncoder();
+const encoder = new TextEncoder();
+    async function loadCachedProfile() {
+      const lastProfile = await prisma.profile.findFirst({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          inputScreenshotUrls: { orderBy: { sortOrder: 'asc' } },
+          outputBlocks: { orderBy: { sortOrder: 'asc' } },
+        },
+      });
+      if (!lastProfile) return null;
+      const uploadsAfter =
+        await prisma.upload.count({
+          where: { userId, createdAt: { gt: lastProfile.createdAt } },
+        });
+      if (uploadsAfter > 0) return null;
+      return lastProfile;
+    }
     /** 长任务期间定时输出一行 JSON，避免 Nginx/反代因「长时间无响应」返回 502 */
     const stream = new ReadableStream({
       async start(controller) {
@@ -94,8 +114,43 @@ export async function POST() {
           }
         }, 12_000);
         try {
+          const cachedProfile = await loadCachedProfile();
+          if (cachedProfile) {
+            emit({ type: 'stage', stage: 'done', message: '重用最近一次分析结果' });
+            const resultData = cachedProfile.resultData
+              ? JSON.parse(cachedProfile.resultData)
+              : null;
+            const report = soulReportFromNormalized({
+              outputMbti: cachedProfile.outputMbti,
+              outputTitle: cachedProfile.outputTitle,
+              outputOverall: cachedProfile.outputOverall,
+              outputAvatarTag1: cachedProfile.outputAvatarTag1,
+              outputAvatarTag2: cachedProfile.outputAvatarTag2,
+              outputAvatarTag3: cachedProfile.outputAvatarTag3,
+              outputBlocks: cachedProfile.outputBlocks,
+            });
+            const analysisResult = {
+              ...report,
+              article: resultData?.article,
+            };
+            const mbtiIp = resolveMbtiIpFromReport(report.mbti);
+            controller.enqueue(
+              encoder.encode(
+                JSON.stringify({
+                  type: 'done',
+                  success: true,
+                  report: { ...analysisResult, mbtiIp },
+                  userScreenshotUrls: cachedProfile.inputScreenshotUrls.map((item) => item.url).filter((u): u is string => !!u),
+                  mbtiIp,
+                }) + '\n',
+              ),
+            );
+            clearInterval(pingIv);
+            controller.close();
+            return;
+          }
           const payload = await runAnalyzeTask(userId, async () => {
-      emit({ type: 'stage', stage: 'gathering', message: '正在整理你刚刚提交的素材…' });
+            emit({ type: 'stage', stage: 'gathering', message: '正在整理你刚刚提交的素材…' });
       const uploads = await prisma.upload.findMany({
         where: { userId },
         orderBy: { createdAt: 'asc' },
