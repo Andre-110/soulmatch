@@ -1334,6 +1334,9 @@ export default function App() {
           value: textInput4,
           onChange: setTextInput4,
         };
+  const bindingCount = Object.values(savedPlatforms).filter(Boolean).length;
+  const screenshotCount = momentsUploads.length + lifePhotoUploads.length;
+
   const analyzeChecklist = [
     { key: 'gathering', label: '整理建档素材' },
     { key: 'scraping', label: '抓取平台公开线索' },
@@ -1342,6 +1345,25 @@ export default function App() {
     { key: 'saving', label: '整理并保存完整报告' },
   ] as const;
   const currentStagePercent = ANALYZE_STAGE_META[analysisStage].percent;
+
+  const deriveStageEta = (stage: AnalyzeStageKey) => {
+    if (stage === 'scraping') {
+      const min = 20 + bindingCount * 4;
+      const max = min + 25;
+      return `预计 ${min}-${max} 秒（已绑定 ${bindingCount} 个平台）`;
+    }
+    if (stage === 'vision') {
+      const min = 18 + Math.ceil(screenshotCount / 2) * 3;
+      const max = min + 22;
+      return `预计 ${min}-${max} 秒（正在处理 ${screenshotCount} 张截图）`;
+    }
+    if (stage === 'prompting') {
+      const min = bindingCount >= 4 ? 18 : 12;
+      const max = min + 15;
+      return `预计 ${min}-${max} 秒（AI 需整合 ${bindingCount} 平台）`;
+    }
+    return ANALYZE_STAGE_META[stage].eta;
+  };
 
   return (
     <div id="app" className={step === 7 ? 'app-mode-ref-report' : undefined}>
@@ -1583,7 +1605,7 @@ export default function App() {
               <div className="ref-loading-progress-track">
                 <div className="ref-loading-progress-fill" style={{ width: `${currentStagePercent}%` }} />
               </div>
-              <p className="ref-loading-eta">{ANALYZE_STAGE_META[analysisStage].eta}</p>
+              <p className="ref-loading-eta">{deriveStageEta(analysisStage)}</p>
             </div>
             <div className="ref-loading-stage-list">
               {analyzeChecklist.map(({ key, label }) => {
@@ -1595,7 +1617,18 @@ export default function App() {
                     className={`ref-loading-stage-item${stageDone ? ' done' : ''}${isCurrent ? ' current' : ''}`}
                   >
                     <span className="ref-loading-stage-icon">{stageDone ? '✓' : isCurrent ? '●' : '⋯'}</span>
-                    <span>{label}</span>
+                    <span>
+                      {label}
+                      <span className="ref-loading-stage-sub">
+                        {key === 'scraping'
+                          ? `已绑定 ${bindingCount} 个平台`
+                          : key === 'vision'
+                            ? `正在分析 ${screenshotCount} 张截图`
+                            : key === 'prompting'
+                              ? `AI 整合 ${bindingCount} 平台 + ${screenshotCount} 视觉线索`
+                              : null}
+                      </span>
+                    </span>
                   </div>
                 );
               })}
