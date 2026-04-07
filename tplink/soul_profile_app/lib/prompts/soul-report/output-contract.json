@@ -11,7 +11,7 @@
       "description": "260～520汉字：平台角色定位、可核验细节、跨平台对比（若可）、收束句"
     }
   ],
-  "overall": "220～420汉字：首屏浓缩总评，必须含具体平台细节与标签化结论",
+  "overall": "220～420汉字：首屏浓缩总评，优先写网易云具体歌名/风格和截图生活碎片细节，结尾给3～6个#标签",
   "article": {
     "headline": "主标题（含实锤承诺与平台数 N）",
     "guaranteeIntro": "开篇 2～4 句可核验承诺",
@@ -21,19 +21,19 @@
         {
           "order": 1,
           "name": "姓名或常用艺名",
-          "similarityScore": 8,
+          "similarityScore": 88,
           "recommendReason": "温柔共情稳"
         },
         {
           "order": 2,
           "name": "姓名或常用艺名",
-          "similarityScore": 7,
+          "similarityScore": 83,
           "recommendReason": "松弛有趣搭"
         },
         {
           "order": 3,
           "name": "姓名或常用艺名",
-          "similarityScore": 7,
+          "similarityScore": 79,
           "recommendReason": "价值观同频"
         }
       ]

@@ -8,165 +8,11 @@ import './globals.css';
  import { ANALYZE_STAGE_KEYS, type AnalyzeStageKey } from '@/lib/analyzeStages';
 import { SoulReportRef } from '@/components/SoulReportRef';
 import { APP_BASE_PATH } from '@/lib/appBasePath';
+import { readAnalyzeNdjsonStream, readAnalyzeNdjsonStreamWithEvents } from '@/lib/api/stream';
+import { readDebugModeFromLocation, readUserSnapshot, persistUserSnapshot, readDebugSkipAutoLogin } from '@/lib/utils/client';
+import { PrivacyNavLink } from '@/components/PrivacyNavLink';
+import { FamiliarityHeart } from '@/components/FamiliarityHeart';
 
-/** 解析 /api/analyze 的 NDJSON 流（服务端定时 ping，避免反代 502） */
-async function readAnalyzeNdjsonStream(res: Response): Promise<{
-  report: unknown;
-  userScreenshotUrls: string[];
-  mbtiIp: unknown;
-}> {
-  const reader = res.body?.getReader();
-  if (!reader) throw new Error('无法读取响应');
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let done: {
-    report: unknown;
-    userScreenshotUrls: string[];
-    mbtiIp: unknown;
-  } | null = null;
-  let errPayload: { status?: number; error?: string } | null = null;
-  const consumeLine = (raw: string) => {
-    const t = raw.trim();
-    if (!t) return;
-    const j = JSON.parse(t) as {
-      type?: string;
-      status?: number;
-      error?: string;
-      report?: unknown;
-      userScreenshotUrls?: string[];
-      mbtiIp?: unknown;
-    };
-    if (j.type === 'done' && j.report !== undefined) {
-      done = {
-        report: j.report,
-        userScreenshotUrls: Array.isArray(j.userScreenshotUrls) ? j.userScreenshotUrls : [],
-        mbtiIp: j.mbtiIp ?? null,
-      };
-    }
-    if (j.type === 'error') errPayload = { status: j.status, error: j.error };
-  };
-  while (true) {
-    const { value, done: streamDone } = await reader.read();
-    if (value) buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) consumeLine(line);
-    if (streamDone) {
-      if (buffer.trim()) consumeLine(buffer);
-      break;
-    }
-  }
-  if (errPayload) {
-    const e = new Error(errPayload.error || '请求错误') as Error & { status?: number };
-    e.status = errPayload.status;
-    throw e;
-  }
-  if (!done) throw new Error('未收到分析结果');
-  return done;
-}
-
-type AnalyzeStageEvent = {
-  type: 'stage';
-  stage: AnalyzeStageKey;
-  message?: string;
-};
-
-type AnalyzeStageDurationEvent = {
-  type: 'stageDuration';
-  stage: AnalyzeStageKey;
-  durationMs: number;
-  aggregated: {
-    avgMs: number;
-    count: number;
-    maxMs: number;
-    lastMs: number;
-  };
-};
-
-type StageTimelineEntry = AnalyzeStageDurationEvent & { timestamp: number };
-
-async function readAnalyzeNdjsonStreamWithEvents(
-  res: Response,
-  options?: {
-    onStage?: (event: AnalyzeStageEvent) => void;
-    onStageDuration?: (event: AnalyzeStageDurationEvent) => void;
-  },
-): Promise<{
-  report: unknown;
-  userScreenshotUrls: string[];
-  mbtiIp: unknown;
-}> {
-  const reader = res.body?.getReader();
-  if (!reader) throw new Error('无法读取响应');
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let done: {
-    report: unknown;
-    userScreenshotUrls: string[];
-    mbtiIp: unknown;
-  } | null = null;
-  let errPayload: { status?: number; error?: string } | null = null;
-  const consumeLine = (raw: string) => {
-    const t = raw.trim();
-    if (!t) return;
-    const j = JSON.parse(t) as {
-      type?: string;
-      stage?: AnalyzeStageKey;
-      message?: string;
-      status?: number;
-      error?: string;
-      report?: unknown;
-      userScreenshotUrls?: string[];
-      mbtiIp?: unknown;
-      durationMs?: number;
-      aggregated?: {
-        avgMs: number;
-        count: number;
-        maxMs: number;
-        lastMs: number;
-      };
-    };
-    if (j.type === 'stage' && j.stage) {
-      options?.onStage?.({ type: 'stage', stage: j.stage, message: j.message });
-      return;
-    }
-    if (j.type === 'stageDuration' && j.stage && typeof j.durationMs === 'number' && j.aggregated) {
-      options?.onStageDuration?.({
-        type: 'stageDuration',
-        stage: j.stage,
-        durationMs: j.durationMs,
-        aggregated: j.aggregated,
-      });
-      return;
-    }
-    if (j.type === 'done' && j.report !== undefined) {
-      done = {
-        report: j.report,
-        userScreenshotUrls: Array.isArray(j.userScreenshotUrls) ? j.userScreenshotUrls : [],
-        mbtiIp: j.mbtiIp ?? null,
-      };
-    }
-    if (j.type === 'error') errPayload = { status: j.status, error: j.error };
-  };
-  while (true) {
-    const { value, done: streamDone } = await reader.read();
-    if (value) buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) consumeLine(line);
-    if (streamDone) {
-      if (buffer.trim()) consumeLine(buffer);
-      break;
-    }
-  }
-  if (errPayload) {
-    const e = new Error(errPayload.error || '请求错误') as Error & { status?: number };
-    e.status = errPayload.status;
-    throw e;
-  }
-  if (!done) throw new Error('未收到分析结果');
-  return done;
-}
 
 const TOTAL_ONBOARD_STEPS = 4;
 
@@ -387,22 +233,6 @@ const ANALYZE_STAGE_META: Record<
   done: { label: '灵魂档案已生成完成', percent: 100, eta: '已完成' },
 };
 
-const SESSION_USER_SNAPSHOT_KEY = 'soulmatch_user_snapshot';
-
-/** 逐渐替换 Link 的隐私跳转，确保在同一标签页内导航并支持返回 */
-function PrivacyNavLink({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-  return (
-    <button
-      type="button"
-      className="ref-privacy-link"
-      onClick={() => router.push('/privacy')}
-    >
-      {children}
-    </button>
-  );
-}
-
 type UploadSlot = 'moments' | 'life';
 type StepUploadItem = {
   id: string;
@@ -411,54 +241,10 @@ type StepUploadItem = {
 
 type VoicePermissionState = 'unknown' | 'granted' | 'prompt' | 'denied' | 'unsupported';
 
-function readDebugModeFromLocation(): boolean {
-  if (typeof window === 'undefined') return false;
-  const q = new URLSearchParams(window.location.search);
-  return q.get('debug') === '1' || q.get('mode') === 'debug';
-}
 
-function readUserSnapshot(): { id: string; name: string } | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = sessionStorage.getItem(SESSION_USER_SNAPSHOT_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { id?: string; name?: string };
-    if (parsed?.id && typeof parsed.id === 'string') {
-      return { id: parsed.id, name: parsed.name || '朋友' };
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
 
-function persistUserSnapshot(user: { id: string; name: string } | null) {
-  if (typeof window === 'undefined') return;
-  if (!user) {
-    sessionStorage.removeItem(SESSION_USER_SNAPSHOT_KEY);
-    return;
-  }
-  sessionStorage.setItem(SESSION_USER_SNAPSHOT_KEY, JSON.stringify(user));
-}
 
-/** Debug：是否跳过自动登录（仅手动点登录） */
-function readDebugSkipAutoLogin(): boolean {
-  if (typeof window === 'undefined') return false;
-  return new URLSearchParams(window.location.search).get('autologin') === '0';
-}
 
-function FamiliarityHeart({ pct }: { pct: number }) {
-  const p = Math.max(0, Math.min(100, Math.round(pct)));
-  return (
-    <div className="ref-familiarity-float">
-      <span className="ref-familiarity-label">了解程度</span>
-      <div className="ref-familiarity-heart" aria-hidden>
-        <div className="ref-familiarity-fill" style={{ height: `${p}%` }} />
-        <span className="ref-familiarity-num">{p}%</span>
-      </div>
-    </div>
-  );
-}
 
 export default function App() {
   const [step, setStep] = useState(-1);
@@ -1358,7 +1144,7 @@ export default function App() {
     const isBound = !!persisted && !isActive;
     const validation = validations[id];
     return (
-      <div style={{ marginBottom: '16px' }} key={id}>
+      <div className="platform-row-wrapper" key={id}>
         <div className={`platform-item ${isBound ? 'connected' : ''}`} onClick={() => setActiveInput(isActive ? null : id)}>
           <div className="p-icon" style={{ background: bg, color: color }}>{iconStr}</div>
           <div className="p-info">{name}</div>
@@ -1366,22 +1152,22 @@ export default function App() {
         </div>
 
         {persisted && (
-          <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.65)', marginTop: '6px', paddingLeft: '4px', wordBreak: 'break-all' }}>
-            主页链接：<a href={persisted} target="_blank" rel="noopener noreferrer" style={{ color: '#00f2fe', textDecoration: 'underline' }}>{persisted}</a>
+          <p className="platform-hint">
+            主页链接：<a href={persisted} target="_blank" rel="noopener noreferrer" className="platform-link">{persisted}</a>
           </p>
         )}
 
         {isActive && (
-          <div style={{ padding: '16px', marginTop: '8px', background: 'rgba(0,0,0,0.2)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <div className="tutorial-container">
             {/* 分步操作指引 */}
-            <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.45)', marginBottom: '8px', fontWeight: 600, letterSpacing: '0.4px' }}>
+            <p className="tutorial-title">
               📋 如何获取你自己的链接
             </p>
 
             {/* 教程示意图 - 分步展示 */}
-            <div style={{ marginBottom: '14px' }}>
+            <div className="tutorial-hints-list">
               {[1, 2, 3].map((stepNum) => (
-                <div key={stepNum} style={{ marginBottom: '8px', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <div key={stepNum} className="tutorial-step">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={`/tutorials/${id}-step${stepNum}.png`}
@@ -1396,15 +1182,13 @@ export default function App() {
               ))}
             </div>
 
-            <div style={{ marginBottom: '14px' }}>
+            <div className="tutorial-hints-list">
               {PLATFORM_HINTS[id].map((hint, i) => (
-                <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '6px', alignItems: 'flex-start' }}>
-                  <span style={{
-                    flexShrink: 0, width: '18px', height: '18px', borderRadius: '50%',
-                    background: 'rgba(167,139,250,0.25)', color: '#c4b5fd',
-                    fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>{i + 1}</span>
-                  <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: '12px', margin: 0, lineHeight: 1.5 }}>
+                <div key={i} className="tutorial-hint-item">
+                  <span className="tutorial-step-num tutorial-step-badge">
+                    {i + 1}
+                  </span>
+                  <p className="tutorial-step-text">
                     {hint.text}
                     {hint.link && (
                       <>
@@ -1413,7 +1197,8 @@ export default function App() {
                           href={hint.link.href}
                           target="_blank"
                           rel="noopener noreferrer"
-                          style={{ color: '#00f2fe', textDecoration: 'underline', wordBreak: 'break-all' }}
+                          className="platform-link"
+                          style={{ wordBreak: 'break-all' }}
                         >
                           {hint.link.label}
                         </a>
@@ -1425,8 +1210,8 @@ export default function App() {
             </div>
             <input
               type="text"
-              className="glass-input"
-              style={{ padding: '12px', fontSize: '14px', marginBottom: '6px', borderColor: validation ? (validation.ok ? 'rgba(0,255,120,0.5)' : 'rgba(255,80,80,0.5)') : undefined }}
+              className={`glass-input${validation ? (validation.ok ? ' border-success' : ' border-error') : ''}`}
+              style={{ padding: '12px', fontSize: '14px', marginBottom: '6px' }}
               placeholder="粘贴链接 或 填写 ID"
               value={bindings[id]}
               onChange={(e) => {
@@ -1447,7 +1232,7 @@ export default function App() {
             />
             {/* 实时校验结果 */}
             {validation && (
-              <p style={{ fontSize: '11px', marginBottom: '8px', color: validation.ok ? 'rgba(0,255,120,0.9)' : 'rgba(255,100,100,0.9)', wordBreak: 'break-all' }}>
+              <p className={`validation-message${validation.ok ? ' text-success' : ' text-error'}`}>
                 {validation.msg}
                 {validation.ok && validation.url && (
                   <a
@@ -1462,7 +1247,7 @@ export default function App() {
               </p>
             )}
             {/* 示例 */}
-            <p style={{ fontSize: '10px', color: 'rgba(255,255,255,0.4)', marginBottom: '12px', wordBreak: 'break-all' }}>
+            <p className="example-text">
               示例：{PLATFORM_EXAMPLES[id]}
             </p>
             <div className="ref-platform-actions">
@@ -1481,7 +1266,7 @@ export default function App() {
                 复制示例
               </button>
             </div>
-            <button type="button" className="btn btn-primary" style={{ padding: '10px', fontSize: '14px' }} disabled={!!validation && !validation.ok} onClick={() => bindPlatform(id)}>
+            <button type="button" className="btn btn-primary btn-confirm-binding" disabled={!!validation && !validation.ok} onClick={() => bindPlatform(id)}>
               确认绑定
             </button>
           </div>
@@ -1784,7 +1569,7 @@ export default function App() {
           zIndex: 9998,
           background: 'rgba(0,0,0,0.25)',
         }}>
-          <div style={{ height: '100%', backgroundColor: '#00f2fe', width: `${stepUploadProgress}%`, transition: 'width 0.3s linear' }} />
+          <div className="progress-bar-fill" style={{ width: `${stepUploadProgress}%` }} />
         </div>
       )}
 
@@ -1869,8 +1654,7 @@ export default function App() {
                 {debugMode && (
                   <button
                     type="button"
-                    className="btn btn-secondary"
-                    style={{ marginBottom: '16px' }}
+                    className="btn btn-secondary debug-skip-btn"
                     onClick={() => setStep(4)}
                   >
                     🚀 Debug: 跳到问卷
@@ -1891,8 +1675,7 @@ export default function App() {
                 {debugMode && (
                   <button
                     type="button"
-                    className="btn btn-secondary"
-                    style={{ marginBottom: '16px' }}
+                    className="btn btn-secondary debug-skip-btn"
                     onClick={() => setStep(4)}
                   >
                     🚀 Debug: 跳到问卷
@@ -1913,8 +1696,7 @@ export default function App() {
                 {debugMode && (
                   <button
                     type="button"
-                    className="btn btn-secondary"
-                    style={{ marginBottom: '16px' }}
+                    className="btn btn-secondary debug-skip-btn"
                     onClick={() => setStep(4)}
                   >
                     🚀 Debug: 跳到问卷
@@ -1935,7 +1717,7 @@ export default function App() {
                   {renderPlatformRow('zhihu', PLATFORM_NAMES.zhihu, '💡', '#E6F0FF', '#0066FF')}
                 </div>
                 {!XHS_BINDING_ENABLED && (
-                  <p style={{ marginTop: '8px', fontSize: '12px', color: 'rgba(255,210,130,0.95)' }}>
+                  <p className="platform-warning">
                     小红书入口已暂时关闭，后续恢复后会重新开放。
                   </p>
                 )}
@@ -2048,7 +1830,7 @@ export default function App() {
           <div className="view-content view-loading">
             <h2 className="loading-title">正在生成你的灵魂档案<br />请稍候…</h2>
             <div className="hatching-container"><div className="hatching-orb"></div></div>
-            <p className="loading-status" style={{ minHeight: '48px', transition: 'opacity 0.4s', textAlign: 'center', padding: '0 24px' }}>{analysisStatus}</p>
+            <p className="loading-status loading-status-text">{analysisStatus}</p>
             <div className="ref-loading-progress">
               <div className="ref-loading-progress-row">
                 <span>当前进度</span>

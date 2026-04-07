@@ -24,6 +24,8 @@ import fs from 'fs';
 import path from 'path';
 import { resolveMbtiIpFromReport } from '@/lib/mbtiIpIndex';
 import { resourceMonitor } from '@/lib/resourceMonitor';
+import { AnalyzeStageKey } from '@/lib/analyzeStages';
+import { recordAnalyzeStageDuration } from '@/lib/analyzeTiming';
 
 /** 抓取多站主页可能较慢（含 Reader 回退 + 双轮模型调用） */
 export const maxDuration = 300;
@@ -104,8 +106,34 @@ const encoder = new TextEncoder();
         const emit = (payload: Record<string, unknown>) => {
           controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
         };
+        const stageStartTimes: Partial<Record<AnalyzeStageKey, number>> = {};
+        let currentStage: AnalyzeStageKey | null = null;
+        const finalizeStage = (stage: AnalyzeStageKey, now = Date.now()) => {
+          const start = stageStartTimes[stage];
+          if (!start || stage === 'done') return;
+          delete stageStartTimes[stage];
+          const durationMs = now - start;
+          const aggregated = recordAnalyzeStageDuration(stage, durationMs);
+          emit({
+            type: 'stageDuration',
+            stage,
+            durationMs,
+            aggregated,
+          });
+        };
+        const emitStage = (stage: AnalyzeStageKey, message: string) => {
+          const now = Date.now();
+          if (currentStage && currentStage !== stage) finalizeStage(currentStage, now);
+          if (stage !== 'done') stageStartTimes[stage] = now;
+          currentStage = stage;
+          emit({ type: 'stage', stage, message });
+        };
+        const finalizeCurrentStage = () => {
+          if (currentStage && currentStage !== 'done') finalizeStage(currentStage);
+          currentStage = null;
+        };
         controller.enqueue(encoder.encode('{"type":"ack"}\n'));
-        emit({ type: 'stage', stage: 'queued', message: '已接收请求，准备开始分析…' });
+        emitStage('queued', '已接收请求，准备开始分析…');
         const pingIv = setInterval(() => {
           try {
             controller.enqueue(encoder.encode('{"type":"ping"}\n'));
@@ -116,7 +144,8 @@ const encoder = new TextEncoder();
         try {
           const cachedProfile = await loadCachedProfile();
           if (cachedProfile) {
-            emit({ type: 'stage', stage: 'done', message: '重用最近一次分析结果' });
+            finalizeStage('queued');
+            emitStage('done', '重用最近一次分析结果');
             const resultData = cachedProfile.resultData
               ? JSON.parse(cachedProfile.resultData)
               : null;
@@ -150,14 +179,14 @@ const encoder = new TextEncoder();
             return;
           }
           const payload = await runAnalyzeTask(userId, async () => {
-            emit({ type: 'stage', stage: 'gathering', message: '正在整理你刚刚提交的素材…' });
+            emitStage('gathering', '正在整理你刚刚提交的素材…');
       const uploads = await prisma.upload.findMany({
         where: { userId },
         orderBy: { createdAt: 'asc' },
       });
 
       const platformUploadsLatest = pickLatestPlatformUploads(uploads);
-      emit({ type: 'stage', stage: 'scraping', message: '正在连接平台并提取可用线索…' });
+      emitStage('scraping', '正在连接平台并提取可用线索…');
       const scrapes = await scrapeFromPlatformUploads(platformUploadsLatest);
       console.log(
         `[Analyze] userId=${userId} 全量上传=${uploads.length}，平台去重后=${platformUploadsLatest.length}，抓取摘要: ${summarizeScrapesForLog(scrapes)}`,
@@ -208,7 +237,7 @@ const encoder = new TextEncoder();
       const context = contextParts.join('');
 
       // 平台截图（Playwright 抓取的）→ 再拼接用户手传图；二者顺序须与 context 说明一致
-      emit({ type: 'stage', stage: 'vision', message: '正在解读截图里的视觉细节…' });
+      emitStage('vision', '正在解读截图里的视觉细节…');
       const platformShotsWithKey = scrapes
         .filter((o) => o.screenshotDataUrl)
         .slice(0, MAX_PLATFORM_SHOTS_FOR_VISION)
@@ -230,7 +259,7 @@ const encoder = new TextEncoder();
       }
 
       const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-      emit({ type: 'stage', stage: 'prompting', message: 'AI 正在生成你的画像与匹配建议…' });
+      emitStage('prompting', 'AI 正在生成你的画像与匹配建议…');
       let report = await tryOpenAISoulReport(context, screenshotDataUrls, screenshotKeys, scrapes);
       const reportSource = report ? 'openai' : 'fallback';
       if (!report) {
@@ -253,7 +282,7 @@ const encoder = new TextEncoder();
         openaiModel: reportSource === 'openai' ? openaiModel : undefined,
       });
 
-      emit({ type: 'stage', stage: 'saving', message: '正在整理结构并写入档案…' });
+      emitStage('saving', '正在整理结构并写入档案…');
       await prisma.profile.create({
         data: buildProfileNormalizedCreate({
           userId,
@@ -263,6 +292,7 @@ const encoder = new TextEncoder();
       });
 
       const mbtiIp = resolveMbtiIpFromReport(report.mbti);
+      emitStage('done', '灵魂档案已生成完成');
       return { success: true as const, report, userScreenshotUrls, mbtiIp };
           });
           controller.enqueue(
@@ -297,6 +327,7 @@ const encoder = new TextEncoder();
           }
         } finally {
           clearInterval(pingIv);
+          finalizeCurrentStage();
           controller.close();
         }
       },
