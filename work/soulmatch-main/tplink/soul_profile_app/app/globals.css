@@ -3949,8 +3949,21 @@ h1.title.ref-home-title {
     }
 
     .ref-rp-ip-summary {
-        font-size: 17px;
-        line-height: 1.8;
+        font-size: 15px;
+        line-height: 1.7;
+    }
+
+    .ref-rp-ip-info {
+        max-width: 100%;
+        padding: 0 4px;
+    }
+
+    .ref-rp-section {
+        padding: 40px 16px 48px;
+    }
+
+    .ref-rp-h2-main {
+        font-size: 26px;
     }
 
     .ref-rp-mbti-grid {

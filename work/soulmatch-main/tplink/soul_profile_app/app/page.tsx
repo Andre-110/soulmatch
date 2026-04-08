@@ -292,7 +292,7 @@ type QuestionnaireSubmissionPayload = {
 
 
 export default function App() {
-  const [step, setStep] = useState(-1);
+  const [step, setStep] = useState(0);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -521,12 +521,17 @@ export default function App() {
 
   useEffect(() => {
     if (step !== 4) return;
+    // Debug 模式：直接显示所有问题为已回答状态
+    if (debugMode && questionIndex === 0) {
+      setQuestionIndex(QUESTIONNAIRE.length);
+      return;
+    }
     const timer = setTimeout(() => {
       questionFlowTailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
       activeTextareaRef.current?.focus();
     }, 120);
     return () => clearTimeout(timer);
-  }, [step, questionIndex]);
+  }, [step, questionIndex, debugMode]);
 
   useEffect(() => {
     const container = viewContainerRef.current;
@@ -1266,9 +1271,13 @@ export default function App() {
     } catch (e) {
       const st = (e as Error & { status?: number }).status;
       const msg = e instanceof Error ? e.message : '网络错误';
-      if (st === 409) alert('正在分析中，请勿重复提交');
-      else alert(`网络错误：${msg}`);
-      setStep(3);
+      if (st === 409) {
+        // 409 表示已有分析在进行中，保持在分析页面等待完成，不要回退
+        setAnalysisStatus('检测到正在进行的分析任务，请稍候…');
+      } else {
+        alert(`网络错误：${msg}`);
+        setStep(3);
+      }
     } finally {
       setQuestionIndex(0);
     }

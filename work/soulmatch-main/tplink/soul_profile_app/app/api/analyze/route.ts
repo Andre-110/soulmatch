@@ -58,6 +58,44 @@ function clipForContext(text: string, max: number): string {
   return normalized.length <= max ? normalized : `${normalized.slice(0, max)}…`;
 }
 
+function summarizeOpenAIBaseUrl(raw: string | undefined): string {
+  const fallback = 'https://api.openai.com/v1';
+  const input = (raw ?? fallback).trim() || fallback;
+  try {
+    const url = new URL(input);
+    return `${url.protocol}//${url.host}${url.pathname.replace(/\/+$/, '')}`;
+  } catch {
+    return input;
+  }
+}
+
+function serializeUnknownError(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    const withCause = error as Error & { cause?: unknown };
+    return {
+      type: error.constructor?.name ?? 'Error',
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      cause:
+        withCause.cause instanceof Error
+          ? {
+              type: withCause.cause.constructor?.name ?? 'Error',
+              name: withCause.cause.name,
+              message: withCause.cause.message,
+              stack: withCause.cause.stack,
+            }
+          : withCause.cause !== undefined
+            ? String(withCause.cause)
+            : undefined,
+    };
+  }
+  return {
+    type: typeof error,
+    value: error === undefined ? 'undefined' : error === null ? 'null' : String(error),
+  };
+}
+
 function pickQuestionLines(summary: string, ids: number[]): string[] {
   if (!summary.trim()) return [];
   const chunks = summary
@@ -129,6 +167,9 @@ export async function POST(req: Request) {
     const inlineQuestionnaireSummary = (analyzePayload.questionnaireSummary || '').trim();
     const inlineOpenTextSummary = (analyzePayload.openTextSummary || '').trim();
     const inlineMatchIntent = (analyzePayload.matchIntentText || '').trim();
+    const traceId = `analyze_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    const openaiBaseUrl = summarizeOpenAIBaseUrl(process.env.OPENAI_BASE_URL);
     const encoder = new TextEncoder();
     async function loadCachedProfile() {
       if (submissionStartedAt) return null;
@@ -157,6 +198,17 @@ export async function POST(req: Request) {
         let lastSnapshot: AnalyzeSnapshot = {};
         const stageStartTimes: Partial<Record<AnalyzeStageKey, number>> = {};
         let currentStage: AnalyzeStageKey | null = null;
+        const analyzeDebugMeta: Record<string, unknown> = {
+          traceId,
+          userId,
+          openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
+          openaiModel,
+          openaiBaseUrl,
+          submissionStartedAt: submissionStartedAt?.toISOString() ?? null,
+          inlineQuestionnaireSummaryLength: inlineQuestionnaireSummary.length,
+          inlineOpenTextSummaryLength: inlineOpenTextSummary.length,
+          inlineMatchIntentLength: inlineMatchIntent.length,
+        };
         const emitSnapshot = (patch: AnalyzeSnapshot) => {
           lastSnapshot = {
             ...lastSnapshot,
@@ -255,6 +307,10 @@ export async function POST(req: Request) {
       });
 
       const platformUploadsLatest = pickLatestPlatformUploads(uploads);
+      analyzeDebugMeta.totalUploads = uploads.length;
+      analyzeDebugMeta.platformBindings = platformUploadsLatest.length;
+      analyzeDebugMeta.userScreenshotCount = uploads.filter((u) => u.type === 'screenshot' && u.url).length;
+      analyzeDebugMeta.textUploadCount = uploads.filter((u) => u.type === 'text' || u.type === 'voice-text').length;
       emitSnapshot({
         submission: {
           startedAt: submissionStartedAt?.toISOString() ?? null,
@@ -279,6 +335,7 @@ export async function POST(req: Request) {
           failedPlatforms: scrapes.filter((o) => !o.ok || !(o.excerpt || '').trim()).length,
         },
       });
+      analyzeDebugMeta.scrapeSummary = summarizeScrapesForLog(scrapes);
       console.log(
         `[Analyze] userId=${userId} 全量上传=${uploads.length}，平台去重后=${platformUploadsLatest.length}，抓取摘要: ${summarizeScrapesForLog(scrapes)}`,
       );
@@ -382,7 +439,6 @@ export async function POST(req: Request) {
         },
       });
 
-      const openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
       emitStage(
         'vision',
         screenshotDataUrls.length > 0
@@ -400,6 +456,12 @@ export async function POST(req: Request) {
         ...mergedUserTexts,
         matchIntent || '',
       ].join('\n');
+      analyzeDebugMeta.mergedUserTexts = mergedUserTexts.length;
+      analyzeDebugMeta.contextLength = context.length;
+      analyzeDebugMeta.evidenceLength = evidenceText.length;
+      analyzeDebugMeta.selectedVisionImages = screenshotDataUrls.length;
+      analyzeDebugMeta.platformVisionImages = platformShotsWithKey.length;
+      analyzeDebugMeta.userUploadVisionImages = userScreenshots.slice(0, MAX_USER_SHOTS_FOR_VISION).length;
 
       let report = await tryOpenAISoulReport(context, screenshotDataUrls, screenshotKeys, scrapes, {
         evidenceText,
@@ -468,10 +530,23 @@ export async function POST(req: Request) {
               ),
             );
           } else {
-            console.error(error);
+            console.error('[Analyze] 分析失败', {
+              traceId,
+              stage: currentStage,
+              snapshot: lastSnapshot,
+              meta: analyzeDebugMeta,
+              error: serializeUnknownError(error),
+            });
+            const errorMsg = error instanceof Error ? error.message : String(error);
             controller.enqueue(
               encoder.encode(
-                JSON.stringify({ type: 'error', status: 500, error: '分析生成失败' }) + '\n',
+                JSON.stringify({
+                  type: 'error',
+                  status: 500,
+                  error: `分析生成失败: ${errorMsg}`,
+                  stage: currentStage,
+                  traceId,
+                }) + '\n',
               ),
             );
           }
@@ -497,7 +572,10 @@ export async function POST(req: Request) {
     if (error instanceof AnalyzeInProgressError) {
       return NextResponse.json({ error: '正在分析中，请勿重复提交' }, { status: 409 });
     }
-    console.error(error);
-    return NextResponse.json({ error: '分析生成失败' }, { status: 500 });
+    console.error('[Analyze] 外层捕获错误', {
+      error: serializeUnknownError(error),
+    });
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: `分析生成失败: ${errorMsg}` }, { status: 500 });
   }
 }
