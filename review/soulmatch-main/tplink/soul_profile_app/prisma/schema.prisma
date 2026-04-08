@@ -1,0 +1,114 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  password  String
+  name      String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  profiles  Profile[]
+  uploads   Upload[]
+}
+
+model Upload {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  content   String?
+  url       String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Profile {
+  id                     String                      @id @default(cuid())
+  userId                 String
+  /// * 旧版整段 JSON，仅历史行；新数据为 null
+  inputData              String?
+  resultData             String?
+  /// * 输入快照 · 标量
+  inputVersion           Int                         @default(1)
+  inputRecordedAt        DateTime?
+  inputReportSource      String?
+  inputOpenaiModel       String?
+  inputContextCharLength Int?
+  inputScreenshotCount   Int?
+  inputVisionImageCount  Int?
+  /// * 输出 · 标量
+  outputMbti             String?
+  outputTitle            String?
+  outputOverall          String?
+  outputAvatarTag1       String?
+  outputAvatarTag2       String?
+  outputAvatarTag3       String?
+  createdAt              DateTime                    @default(now())
+  user                   User                        @relation(fields: [userId], references: [id])
+  inputScrapes           ProfileInputScrape[]
+  inputScreenshotUrls    ProfileInputScreenshotUrl[]
+  inputUploads           ProfileInputUpload[]
+  inputUserTexts         ProfileInputUserText[]
+  outputBlocks           ProfileOutputBlock[]
+
+  @@index([userId, createdAt])
+}
+
+model ProfileInputUpload {
+  id        String  @id @default(cuid())
+  profileId String
+  sortOrder Int
+  uploadId  String?
+  type      String
+  content   String?
+  url       String?
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model ProfileInputScrape {
+  id                    String  @id @default(cuid())
+  profileId             String
+  sortOrder             Int
+  platform              String
+  url                   String
+  ok                    Boolean
+  method                String?
+  excerpt               String
+  hasPlatformScreenshot Boolean @default(false)
+  profile               Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model ProfileInputUserText {
+  id        String  @id @default(cuid())
+  profileId String
+  sortOrder Int
+  content   String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model ProfileInputScreenshotUrl {
+  id        String  @id @default(cuid())
+  profileId String
+  sortOrder Int
+  url       String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model ProfileOutputBlock {
+  id          String  @id @default(cuid())
+  profileId   String
+  sortOrder   Int
+  source      String
+  icon        String
+  tag1        String?
+  tag2        String?
+  title       String
+  description String
+  profile     Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}

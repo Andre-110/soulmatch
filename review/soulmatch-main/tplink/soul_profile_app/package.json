@@ -1,0 +1,41 @@
+{
+  "name": "soul_profile_app",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "bash scripts/dev.sh",
+    "dev:3001": "PORT=3001 bash scripts/dev.sh",
+    "dev:plain": "next dev -H 0.0.0.0",
+    "build": "NODE_OPTIONS=--max-old-space-size=1536 next build --webpack",
+    "clean": "rm -rf .next",
+    "rebuild": "npm run clean && npm run build",
+    "start": "bash scripts/start.sh",
+    "start:raw": "next start -H 0.0.0.0 -p 3010",
+    "db:studio": "prisma studio",
+    "db:recent": "npx tsx scripts/list-recent-profiles.ts",
+    "report:markdown": "npx tsx scripts/render-soul-report-markdown.ts",
+    "try:xhs-share": "npx tsx scripts/try-xhs-share.ts",
+    "try:douyin-search": "npx tsx scripts/try-douyin-cookie-search.ts",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.2",
+    "bcryptjs": "^3.0.3",
+    "cheerio": "^1.0.0",
+    "html2canvas": "^1.4.1",
+    "jsonwebtoken": "^9.0.3",
+    "next": "16.2.1",
+    "playwright-core": "^1.58.2",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/react": "19.2.14",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.1",
+    "prisma": "^6.19.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.2"
+  }
+}

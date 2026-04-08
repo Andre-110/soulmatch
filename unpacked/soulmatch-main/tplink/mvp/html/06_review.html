@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=390, initial-scale=1.0">
+<title>社交复盘 · SoulMatch</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; -webkit-font-smoothing:antialiased; }
+body { width:390px; height:844px; overflow:hidden; font-family:-apple-system,'PingFang SC',sans-serif; background:#F2F2F7; display:flex; flex-direction:column; }
+.status-bar { height:54px; background:#fff; display:flex; align-items:center; justify-content:space-between; padding:14px 20px 0; flex-shrink:0; }
+.status-time { font-size:15px; font-weight:600; color:#000; }
+.status-icons { display:flex; align-items:center; gap:6px; }
+.nav-bar { height:44px; background:#fff; display:flex; align-items:center; justify-content:space-between; padding:0 16px; flex-shrink:0; border-bottom:0.5px solid #E5E5EA; position:relative; }
+.nav-back { display:flex; align-items:center; gap:4px; color:#6C5CE7; font-size:16px; }
+.nav-title { position:absolute; left:50%; transform:translateX(-50%); font-size:17px; font-weight:600; color:#1C1C1E; }
+.scroll-content { flex:1; overflow-y:auto; padding:16px; }
+.scroll-content::-webkit-scrollbar { display:none; }
+.report-header { background:linear-gradient(135deg,#6C5CE7,#a29bfe); border-radius:16px; padding:20px; margin-bottom:14px; color:#fff; }
+.report-label { font-size:12px; font-weight:600; opacity:.8; letter-spacing:.5px; margin-bottom:6px; }
+.report-title { font-size:20px; font-weight:700; margin-bottom:4px; }
+.report-sub { font-size:13px; opacity:.8; margin-bottom:18px; }
+.stats-row { display:flex; gap:10px; }
+.stat-circle { flex:1; background:rgba(255,255,255,.15); border-radius:12px; padding:12px 8px; text-align:center; }
+.stat-value { font-size:22px; font-weight:700; line-height:1.2; }
+.stat-unit { font-size:11px; opacity:.8; margin-bottom:2px; }
+.stat-label { font-size:11px; opacity:.75; }
+.section-card { background:#fff; border-radius:16px; padding:16px; margin-bottom:14px; box-shadow:0 2px 12px rgba(0,0,0,.06); }
+.section-title { font-size:16px; font-weight:700; color:#1C1C1E; margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+.highlight-row { display:flex; align-items:flex-start; gap:10px; margin-bottom:12px; }
+.highlight-row:last-child { margin-bottom:0; }
+.check-icon { width:20px; height:20px; flex-shrink:0; margin-top:1px; }
+.highlight-text { font-size:14px; color:#1C1C1E; line-height:1.5; }
+.warn-icon { width:20px; height:20px; flex-shrink:0; margin-top:1px; }
+.suggest-block { background:#FFF9E6; border-left:3px solid #F9CA24; border-radius:0 10px 10px 0; padding:10px 12px; margin-bottom:10px; }
+.suggest-block:last-child { margin-bottom:0; }
+.suggest-text { font-size:13px; color:#5A4A00; line-height:1.5; }
+.growth-row { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+.growth-row:last-child { margin-bottom:0; }
+.growth-label { font-size:13px; color:#1C1C1E; width:80px; flex-shrink:0; }
+.growth-bar-bg { flex:1; height:8px; background:#F2F2F7; border-radius:4px; overflow:hidden; }
+.growth-bar-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,#6C5CE7,#a29bfe); }
+.growth-pct { font-size:12px; color:#6C5CE7; font-weight:600; width:36px; text-align:right; }
+.next-step-card { background:linear-gradient(135deg,#00B894,#00cec9); border-radius:16px; padding:18px; margin-bottom:14px; color:#fff; }
+.next-step-title { font-size:16px; font-weight:700; margin-bottom:10px; }
+.next-step-item { display:flex; align-items:flex-start; gap:8px; margin-bottom:8px; font-size:13px; opacity:.95; line-height:1.5; }
+.tab-bar { height:83px; background:rgba(255,255,255,.95); border-top:0.5px solid #E5E5EA; display:flex; align-items:flex-start; padding-top:10px; flex-shrink:0; }
+.tab-item { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; font-size:10px; color:#8E8E93; }
+.tab-item.active { color:#6C5CE7; }
+</style>
+</head>
+<body>
+<div class="status-bar">
+  <span class="status-time">9:41</span>
+  <div class="status-icons">
+    <svg width="17" height="12" viewBox="0 0 17 12" fill="none"><rect x="0" y="3" width="3" height="9" rx="1" fill="#000"/><rect x="4.5" y="2" width="3" height="10" rx="1" fill="#000"/><rect x="9" y="0" width="3" height="12" rx="1" fill="#000"/><rect x="13.5" y="0" width="3" height="12" rx="1" fill="#000" opacity="0.3"/></svg>
+    <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 2.4C10.4 2.4 12.6 3.4 14.1 5L15.5 3.5C13.6 1.4 11 0 8 0 5 0 2.4 1.4.5 3.5L1.9 5C3.4 3.4 5.6 2.4 8 2.4Z" fill="#000"/><path d="M8 5.6C9.6 5.6 11 6.2 12.1 7.2L13.5 5.8C12 4.4 10.1 3.6 8 3.6 5.9 3.6 4 4.4 2.5 5.8L3.9 7.2C5 6.2 6.4 5.6 8 5.6Z" fill="#000"/><circle cx="8" cy="10" r="2" fill="#000"/></svg>
+    <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x=".5" y=".5" width="21" height="11" rx="3.5" stroke="#000" stroke-opacity=".35"/><rect x="2" y="2" width="16" height="8" rx="2" fill="#000"/><path d="M23 4.5V7.5C23.8 7.2 24.5 6.5 24.5 6 24.5 5.5 23.8 4.8 23 4.5Z" fill="#000" opacity=".4"/></svg>
+  </div>
+</div>
+<div class="nav-bar">
+  <div class="nav-back">
+    <svg width="10" height="17" viewBox="0 0 10 17" fill="none"><path d="M9 1L1 8.5L9 16" stroke="#6C5CE7" stroke-width="2" stroke-linecap="round"/></svg>
+    <span>返回</span>
+  </div>
+  <span class="nav-title">社交复盘</span>
+  <div style="width:50px"></div>
+</div>
+<div class="scroll-content">
+  <div class="report-header">
+    <div class="report-label">AI 社交复盘报告</div>
+    <div class="report-title">与 李明远 的对话</div>
+    <div class="report-sub">2025年3月29日 · 下午 2:23</div>
+    <div class="stats-row">
+      <div class="stat-circle"><div class="stat-value">47</div><div class="stat-unit">分钟</div><div class="stat-label">对话时长</div></div>
+      <div class="stat-circle"><div class="stat-value">9.2</div><div class="stat-unit">分</div><div class="stat-label">话题深度</div></div>
+      <div class="stat-circle"><div class="stat-value">+23%</div><div class="stat-unit">&nbsp;</div><div class="stat-label">关系进展</div></div>
+    </div>
+  </div>
+  <div class="section-card">
+    <div class="section-title">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00B894" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      本次对话亮点
+    </div>
+    <div class="highlight-row"><svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="#00B894" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span class="highlight-text">你主动分享了个人观点，展现了真实的你</span></div>
+    <div class="highlight-row"><svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="#00B894" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span class="highlight-text">对他的问题给出了有深度的回应</span></div>
+    <div class="highlight-row"><svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="#00B894" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span class="highlight-text">成功建立了共同话题：哲学与自我成长</span></div>
+  </div>
+  <div class="section-card">
+    <div class="section-title">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F9CA24" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      需要改进的地方
+    </div>
+    <div class="suggest-block"><div class="suggest-text">你有2次没有追问对方的问题，对话节奏稍显被动。下次可以多用「那你呢？」来保持互动。</div></div>
+    <div class="suggest-block"><div class="suggest-text">结束时没有留下下次见面的钩子。建议在对话收尾时提一个开放性问题，为下次留白。</div></div>
+  </div>
+  <div class="section-card">
+    <div class="section-title">社交能力成长</div>
+    <div class="growth-row"><span class="growth-label">共情表达</span><div class="growth-bar-bg"><div class="growth-bar-fill" style="width:78%"></div></div><span class="growth-pct">78%</span></div>
+    <div class="growth-row"><span class="growth-label">话题引导</span><div class="growth-bar-bg"><div class="growth-bar-fill" style="width:62%"></div></div><span class="growth-pct">62%</span></div>
+    <div class="growth-row"><span class="growth-label">真实表达</span><div class="growth-bar-bg"><div class="growth-bar-fill" style="width:85%"></div></div><span class="growth-pct">85%</span></div>
+    <div class="growth-row"><span class="growth-label">关系推进</span><div class="growth-bar-bg"><div class="growth-bar-fill" style="width:54%"></div></div><span class="growth-pct">54%</span></div>
+  </div>
+  <div class="next-step-card">
+    <div class="next-step-title">AI 建议下一步</div>
+    <div class="next-step-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>约他下周一起线下喝咖啡，你们都在上海</div>
+    <div class="next-step-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>分享一本你们都感兴趣的书，加深话题连接</div>
+    <div class="next-step-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>关系进展良好，可解锁「真人见面」功能</div>
+  </div>
+  <div style="height:8px"></div>
+</div>
+<div class="tab-bar">
+  <div class="tab-item"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><span>发现</span></div>
+  <div class="tab-item"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg><span>匹配</span></div>
+  <div class="tab-item"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><span>灵魂</span></div>
+  <div class="tab-item active"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6C5CE7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg><span>消息</span></div>
+  <div class="tab-item"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>我的</span></div>
+</div>
+</body>
+</html>

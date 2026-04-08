@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=390, initial-scale=1.0">
+<title>灵魂问卷 · SoulMatch</title>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; -webkit-font-smoothing:antialiased; }
+:root {
+  --bg0:#12081f; --bg1:#2d1b4e; --glass:rgba(255,255,255,.08);
+  --line:rgba(255,255,255,.12); --text:#f5f0ff; --muted:rgba(245,240,255,.58);
+  --accent:#c4b5fd; --gold:#ffe066; --mint:#5eead4; --btn:#8b5cf6;
+}
+body {
+  width:390px; height:844px; overflow:hidden;
+  font-family:-apple-system,'PingFang SC','Helvetica Neue',sans-serif;
+  background:linear-gradient(165deg, var(--bg1) 0%, var(--bg0) 55%, #0a0510 100%);
+  color:var(--text); display:flex; flex-direction:column;
+}
+.status-bar {
+  height:54px; display:flex; align-items:center; justify-content:space-between;
+  padding:14px 20px 0; flex-shrink:0;
+}
+.status-time { font-size:15px; font-weight:600; }
+.status-icons { display:flex; gap:6px; }
+.status-icons svg { color:#fff; }
+.nav-bar {
+  padding:8px 20px 12px; flex-shrink:0;
+  border-bottom:1px solid var(--line);
+}
+.nav-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+.nav-back {
+  display:flex; align-items:center; gap:4px; color:var(--gold); font-size:17px; cursor:pointer;
+}
+.nav-title { font-size:32px; font-weight:800; letter-spacing:-0.5px; }
+.ai-hint {
+  font-size:12px; color:var(--mint); background:rgba(94,234,212,.12);
+  padding:5px 12px; border-radius:20px; display:inline-flex; align-items:center; gap:6px; margin-top:6px;
+}
+.ai-dot { width:6px; height:6px; background:var(--mint); border-radius:50%; animation:p 1.4s infinite; }
+@keyframes p { 0%,100%{opacity:1;} 50%{opacity:.4;} }
+.progress-section {
+  padding:14px 20px 16px; flex-shrink:0; border-bottom:1px solid var(--line);
+}
+.progress-label { display:flex; justify-content:space-between; margin-bottom:8px; font-size:13px; }
+.progress-step { font-weight:700; color:var(--accent); }
+.progress-pct { color:var(--muted); }
+.progress-bar-bg { height:6px; background:var(--glass); border-radius:99px; overflow:hidden; }
+.progress-bar-fill {
+  height:100%; width:40%;
+  background:linear-gradient(90deg, var(--btn), var(--gold));
+  border-radius:99px;
+}
+.scroll-content { flex:1; overflow-y:auto; padding:20px 20px 0; }
+.scroll-content::-webkit-scrollbar { display:none; }
+.question-block { margin-bottom:24px; }
+.question-label { font-size:11px; font-weight:700; color:var(--accent); letter-spacing:.08em; margin-bottom:8px; }
+.question-text { font-size:18px; font-weight:700; line-height:1.35; margin-bottom:14px; }
+.option-card {
+  width:100%; border-radius:16px; padding:14px 16px; margin-bottom:10px;
+  display:flex; align-items:flex-start; gap:12px; border:2px solid transparent;
+  background:var(--glass); cursor:pointer; transition:all .2s;
+  backdrop-filter:blur(12px);
+}
+.option-card.selected {
+  border-color:rgba(196,181,253,.55);
+  background:rgba(139,92,246,.18);
+  box-shadow:0 8px 28px rgba(139,92,246,.2);
+}
+.option-letter {
+  width:28px; height:28px; border-radius:8px; background:rgba(255,255,255,.1);
+  display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700;
+  color:var(--muted); flex-shrink:0; margin-top:1px;
+}
+.option-card.selected .option-letter { background:var(--btn); color:#fff; }
+.option-text { font-size:15px; line-height:1.5; color:rgba(255,255,255,.9); flex:1; }
+.option-card.selected .option-text { color:#fff; font-weight:600; }
+.option-check { width:20px; height:20px; margin-top:3px; flex-shrink:0; opacity:0; color:var(--gold); }
+.option-card.selected .option-check { opacity:1; }
+.bottom-bar {
+  padding:12px 20px 34px; flex-shrink:0;
+  background:linear-gradient(180deg, transparent, rgba(10,5,20,.85));
+  border-top:1px solid var(--line);
+}
+.btn-next {
+  width:100%; height:52px; border:none; border-radius:16px;
+  background:linear-gradient(135deg, var(--btn), #6d28d9); color:#fff;
+  font-size:17px; font-weight:700; font-family:inherit; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  box-shadow:0 8px 28px rgba(109,40,217,.4);
+}
+.bottom-hint { text-align:center; font-size:13px; color:var(--muted); margin-top:10px; }
+.bottom-hint span { color:var(--gold); font-weight:700; }
+</style>
+</head>
+<body>
+<div class="status-bar">
+  <span class="status-time">9:41</span>
+  <div class="status-icons">
+    <svg width="17" height="12" fill="none"><rect x="0" y="3" width="3" height="9" rx="1" fill="#fff"/><rect x="4.5" y="2" width="3" height="10" rx="1" fill="#fff"/><rect x="9" y="0.5" width="3" height="11.5" rx="1" fill="#fff"/><rect x="13.5" y="0" width="3" height="12" rx="1" fill="#fff" opacity=".35"/></svg>
+    <svg width="16" height="12" fill="none"><path d="M8 2.5C10.2 2.5 12.2 3.4 13.6 4.9L15 3.4C13.2 1.5 10.7 0.5 8 0.5C5.3 0.5 2.8 1.5 1 3.4L2.4 4.9C3.8 3.4 5.8 2.5 8 2.5Z" fill="#fff"/><path d="M8 5.5C9.4 5.5 10.7 6.1 11.6 7.1L13 5.6C11.7 4.2 9.9 3.5 8 3.5C6.1 3.5 4.3 4.2 3 5.6L4.4 7.1C5.3 6.1 6.6 5.5 8 5.5Z" fill="#fff"/><circle cx="8" cy="10" r="1.5" fill="#fff"/></svg>
+    <svg width="25" height="12" fill="none"><rect x=".5" y=".5" width="21" height="11" rx="3.5" stroke="#fff" stroke-opacity=".45"/><rect x="2" y="2" width="16" height="8" rx="2" fill="#fff"/><path d="M23 4.5V7.5C23.8 7.2 24.5 6.5 24.5 6 24.5 5.5 23.8 4.8 23 4.5Z" fill="#fff" opacity=".45"/></svg>
+  </div>
+</div>
+<div class="nav-bar">
+  <div class="nav-top">
+    <div class="nav-back"><i data-lucide="chevron-left" style="width:20px;height:20px"></i><span>返回</span></div>
+    <span style="font-size:15px;color:var(--muted)">2 / 5</span>
+  </div>
+  <div class="nav-title">灵魂问卷</div>
+  <div class="ai-hint"><span class="ai-dot"></span>AI 分身正在记录你的表达习惯…</div>
+</div>
+<div class="progress-section">
+  <div class="progress-label">
+    <span class="progress-step">第2步 · 你的三观</span>
+    <span class="progress-pct">40%</span>
+  </div>
+  <div class="progress-bar-bg"><div class="progress-bar-fill"></div></div>
+</div>
+<div class="scroll-content">
+  <div class="question-block">
+    <div class="question-label">问题 1 / 2</div>
+    <div class="question-text">面对冲突，你更倾向于？</div>
+    <div class="option-card selected" onclick="selectOption(this,'q1')">
+      <div class="option-letter">A</div>
+      <div class="option-text">直接说出来，解决问题更重要</div>
+      <svg class="option-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <div class="option-card" onclick="selectOption(this,'q1')">
+      <div class="option-letter">B</div>
+      <div class="option-text">先冷静，等情绪平复再谈</div>
+      <svg class="option-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <div class="option-card" onclick="selectOption(this,'q1')">
+      <div class="option-letter">C</div>
+      <div class="option-text">顺着对方，保持和平</div>
+      <svg class="option-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <div class="option-card" onclick="selectOption(this,'q1')">
+      <div class="option-letter">D</div>
+      <div class="option-text">视情况而定，灵活处理</div>
+      <svg class="option-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+  </div>
+  <div class="question-block">
+    <div class="question-label">问题 2 / 2</div>
+    <div class="question-text">你理想的周末是？</div>
+    <div class="option-card" onclick="selectOption(this,'q2')">
+      <div class="option-letter">A</div>
+      <div class="option-text">和朋友出去玩，越热闹越好</div>
+      <svg class="option-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <div class="option-card selected" onclick="selectOption(this,'q2')">
+      <div class="option-letter">B</div>
+      <div class="option-text">宅在家看剧 / 打游戏 / 看书</div>
+      <svg class="option-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <div class="option-card" onclick="selectOption(this,'q2')">
+      <div class="option-letter">C</div>
+      <div class="option-text">一个人去探索新地方</div>
+      <svg class="option-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+    <div class="option-card" onclick="selectOption(this,'q2')">
+      <div class="option-letter">D</div>
+      <div class="option-text">半社交半独处，保持平衡</div>
+      <svg class="option-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+  </div>
+  <div style="height:20px"></div>
+</div>
+<div class="bottom-bar">
+  <button class="btn-next" type="button">下一题 <i data-lucide="arrow-right" style="width:18px;height:18px"></i></button>
+  <div class="bottom-hint">已完成 <span>8 / 20</span> 题</div>
+</div>
+<script>
+function selectOption(el) {
+  el.closest('.question-block').querySelectorAll('.option-card').forEach(function(c){ c.classList.remove('selected'); });
+  el.classList.add('selected');
+}
+if (typeof lucide !== 'undefined') lucide.createIcons();
+</script>
+</body>
+</html>

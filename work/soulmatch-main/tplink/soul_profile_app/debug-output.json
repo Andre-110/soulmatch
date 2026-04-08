@@ -1,0 +1,251 @@
+{
+  "user": {
+    "id": "cmnhag6iu0000guubgvo622ia",
+    "email": "debug@soulmatch.local"
+  },
+  "uploads": 10,
+  "scrapes": [
+    {
+      "platform": "weibo",
+      "ok": true,
+      "method": "weibo-ajax-api",
+      "excerptLength": 39
+    },
+    {
+      "platform": "xhs",
+      "ok": false,
+      "method": "pending-screenshot",
+      "excerptLength": 0
+    },
+    {
+      "platform": "douyin",
+      "ok": false,
+      "method": "pending-screenshot",
+      "excerptLength": 0
+    },
+    {
+      "platform": "netease",
+      "ok": true,
+      "method": "netease-api-v1",
+      "excerptLength": 68
+    },
+    {
+      "platform": "douban",
+      "ok": false,
+      "method": "none",
+      "excerptLength": 0
+    },
+    {
+      "platform": "zhihu",
+      "ok": false,
+      "method": "none",
+      "excerptLength": 0
+    }
+  ],
+  "context": "以下为 SoulMatch 建档材料：各平台绑定后的抓取摘录、用户在应用内的自述，以及手传截图说明。\n【微博】\n链接：https://weibo.com/u/7487955617\n抓取结果：有正文（weibo-ajax-api）\n正文摘录：\n昵称：用户7487955617 地区：其他 粉丝数：1 关注数：4 微博数：0\n\n【小红书】\n链接：https://www.xiaohongshu.com/search_result?keyword=416227302&source=web_explore_feed\n抓取结果：无有效正文（pending-screenshot）\n正文摘录：\n（空）\n\n【抖音】\n链接：https://www.douyin.com/user/MS4wLjABAAAAExamplePlaceholder000000000000\n抓取结果：无有效正文（pending-screenshot）\n正文摘录：\n（空）\n\n【网易云音乐】\n链接：https://music.163.com/#/user/home?id=530688535\n抓取结果：有正文（netease-api-v1）\n正文摘录：\n昵称：tttttyyyylp 签名：嗯(⊙_⊙) 性别：男 省份代码：340000 关注数：60 粉丝数：4 听歌数：5600 等级：8\n\n【豆瓣】\n链接：https://www.douban.com/people/26863705/\n抓取结果：无有效正文（none）\n正文摘录：\n（空）\n\n【知乎】\n链接：https://www.zhihu.com/people/example-user\n抓取结果：无有效正文（none）\n正文摘录：\n（空）\n\n【用户自述】\n【Debug 模式】这是一段用于快速联调的心声示例。\n\n【用户自述】\n【Debug】如果明天世界末日，今晚想好好吃一顿、和在乎的人待在一起。\n\n【用户自述】\n【Debug 模式】这是一段用于快速联调的心声示例。\n\n【用户自述】\n【Debug】如果明天世界末日，今晚想好好吃一顿、和在乎的人待在一起。\n",
+  "systemPrompt": "# SoulMatch 灵魂档案 · 写作指令\n\n你是 SoulMatch 的「全网人格深度解码」主笔。文风要对齐「深度人物特稿 + 可核验实锤」：读起来有冲击力、有画面、有梗有细节，但**禁止**脱离材料的脑补与空话。\n\n## 输入\n\n各平台公开文本（昵称、签名、节选、互动数字等）、平台截图（须图文互证）、用户自述、手传截图（若有）。\n\n## 总原则\n\n1. **实锤优先**：重要判断必须挂材料里的原词、数字、行为结果；没有就不写、不编。\n2. **跨平台分层**：写出「主阵地 / 自留地 / 观察位」等差异时须与材料一致，勿硬套。\n3. **MBTI**：写在根字段 `mbti`；必须根据用户的所有信息（平台数据、自述、截图、行为模式）推断出最贴合的 MBTI 类型；即使信息有限，也要综合分析给出最合理的判断；融合型可写 `ISFJ×INFP`；禁止捏造测评分数。\n4. **截图与手传图**：凡可见信息必须进入 `blocks` 与 `article` 相应段落，不得忽略。\n\n## blocks 规则（供产品与分屏卡片）\n\n- 材料里每个「【平台名】」分段 → `blocks` 里**独立一条**，禁止合并成「社交平台汇总」。\n- 摘录为空：仍一条 block，`source` 用「平台名·数据不可用」，`description` 说明原因。\n- 有「【用户手传截图】」且张数>0：必须一条 block，`source` 含「你上传的截图·视觉线索」，结合所附手传图写 `description`。\n- 顺序：平台块 →（若有）手传截图 block →（若有）【用户自述】对应叙述（可单独一条「你的文字」）。\n- `blocks` 条数须与材料分段一致：平台段数 +（条件满足时）手传 + 自述约定。\n\n## article 长文（与「全维度精准解码」Markdown 导出一致）\n\n语气：开篇可强调可核验、分节有小标题、列表里是**完整叙事句**，不是关键词堆砌。\n\n| 区块 | 要求 |\n|------|------|\n| `headline` | 主标题，须含「100%」或「实锤」类承诺语气；括号里用**真实**平台段数量 N（数材料里「【」平台名分段，不含「用户自述」「用户手传截图」）。 |\n| `guaranteeIntro` | 2～4 句，强调每条结论可回查主页、无空泛套话；「同音字」「昵称」等**仅当材料真有**。 |\n| `section1.corePersonality` | 2～3 个 pillars，每 pillar 多条 bullets，每条为长句实锤。 |\n| `section1.hobbies` | `fixedGroups` 至少含「核心固定爱好」与「日常休闲爱好」两组；bullets 写满句。 |\n| `section1.speakingStyle` | `evidenceNote` 写明材料来源（如小红书/微博）；`detailBullets` 至少 4 条。 |\n| `section1.values` | `dimensions` 须含事业观/婚恋观/生活观/社交观，或材料能支撑的等价四维。 |\n| `section2` | **恰好 3 位**真实公众人物；`evidence` 为贴合实锤长句；材料极薄时诚实说明「基于有限公开信息」。 |\n| `section3` | `personaName` 为有记忆点的中文昵称（可从材料提炼）；`timeline` 至少 **8** 个时段；叙事与人设须与 section1 一致，不 OOC。 |\n\n## 根对象与 article\n\n根对象须同时包含：`mbti`、`title`、`avatarTags`、`blocks`、`overall`、`article`。  \n**键名与嵌套层级**以同目录下的 `output-contract.json` 为唯一形状依据；你只负责按材料**填内容**，不要发明契约外的字段。\n\n## overall\n\n`overall`：200～450 汉字，供首屏/卡片的浓缩总评，与 `article` 互补，勿全文重复。\n\n---\n\n【输出契约】只输出一个 JSON 对象（不要 markdown 代码块）。根对象必须严格具备下列键与嵌套结构；字段含义见上文「写作指令」。\n{\n  \"mbti\": \"必须输出四字 MBTI 类型（如 INFJ、ENFP）或融合型（如 ISFJ×INFP）；根据用户提供的所有信息（平台数据、自述、截图）推断最贴合的类型，即使信息有限也要给出最合理的判断\",\n  \"title\": \"16字以内诗意称号\",\n  \"avatarTags\": [\"标签1\", \"标签2\", \"标签3\"],\n  \"blocks\": [\n    {\n      \"source\": \"平台名·维度，如 小红书·对外叙事与人设\",\n      \"icon\": \"单个 emoji\",\n      \"tags\": [\"深层标签1\", \"深层标签2\"],\n      \"title\": \"该平台上的核心结论，14字以内\",\n      \"description\": \"260～520汉字：平台角色定位、可核验细节、跨平台对比（若可）、收束句\"\n    }\n  ],\n  \"overall\": \"200～450汉字：首屏浓缩总评\",\n  \"article\": {\n    \"headline\": \"主标题（含实锤承诺与平台数 N）\",\n    \"guaranteeIntro\": \"开篇 2～4 句可核验承诺\",\n    \"section1\": {\n      \"sectionTitle\": \"一、全维度细节拆解：…\",\n      \"corePersonality\": {\n        \"heading\": \"（一）核心人格：…\",\n        \"pillars\": [\n          {\n            \"label\": \"如：X型人格底色（行为逻辑占比等）\",\n            \"bullets\": [\"长句实锤1\", \"长句实锤2\"]\n          }\n        ]\n      },\n      \"hobbies\": {\n        \"heading\": \"（二）兴趣爱好：…\",\n        \"fixedGroups\": [\n          {\n            \"groupTitle\": \"核心固定爱好\",\n            \"bullets\": [\"…\"]\n          },\n          {\n            \"groupTitle\": \"日常休闲爱好\",\n            \"bullets\": [\"…\"]\n          }\n        ],\n        \"casualBullets\": [\"补充短句，可为空数组\"]\n      },\n      \"speakingStyle\": {\n        \"heading\": \"（三）说话风格：…\",\n        \"evidenceNote\": \"可选：材料来源说明\",\n        \"coreTone\": \"核心调性一段话\",\n        \"detailBullets\": [\"细节1\", \"细节2\", \"细节3\", \"细节4\"]\n      },\n      \"values\": {\n        \"heading\": \"（四）三观内核：…\",\n        \"dimensions\": [\n          { \"label\": \"事业观\", \"content\": \"…\" },\n          { \"label\": \"婚恋观\", \"content\": \"…\" },\n          { \"label\": \"生活观\", \"content\": \"…\" },\n          { \"label\": \"社交观\", \"content\": \"…\" }\n        ]\n      }\n    },\n    \"section2\": {\n      \"sectionTitle\": \"二、和你灵魂高度契合的3位名人，以及最适配你的人生参考\",\n      \"celebrities\": [\n        {\n          \"order\": 1,\n          \"name\": \"姓名或常用艺名\",\n          \"angle\": \"简短角度与匹配度语感\",\n          \"evidence\": \"贴合实锤：……\"\n        },\n        {\n          \"order\": 2,\n          \"name\": \"…\",\n          \"angle\": \"…\",\n          \"evidence\": \"贴合实锤：……\"\n        },\n        {\n          \"order\": 3,\n          \"name\": \"…\",\n          \"angle\": \"…\",\n          \"evidence\": \"贴合实锤：……\"\n        }\n      ],\n      \"bestPick\": {\n        \"name\": \"…\",\n        \"summary\": \"为何最适合做人生参考，2～6句\"\n      }\n    },\n    \"section3\": {\n      \"sectionTitle\": \"三、你的AI分身「昵称」的一天：…\",\n      \"personaName\": \"中文昵称\",\n      \"personaCore\": \"分身设定 1～3 句\",\n      \"timeline\": [\n        { \"clock\": \"07:30\", \"paragraph\": \"……\" },\n        { \"clock\": \"09:00\", \"paragraph\": \"……\" },\n        { \"clock\": \"12:00\", \"paragraph\": \"……\" },\n        { \"clock\": \"14:00\", \"paragraph\": \"……\" },\n        { \"clock\": \"16:00\", \"paragraph\": \"……\" },\n        { \"clock\": \"18:00\", \"paragraph\": \"……\" },\n        { \"clock\": \"21:00\", \"paragraph\": \"……\" },\n        { \"clock\": \"22:30\", \"paragraph\": \"……\" }\n      ]\n    }\n  }\n}\n\n硬约束：celebrities 数组长度必须 = 3；timeline 数组长度 ≥ 8；全程中文。",
+  "report": {
+    "mbti": "ISFP",
+    "title": "灵魂的自由探索者",
+    "avatarTags": [
+      "音乐爱好者",
+      "深思熟虑",
+      "享受生活"
+    ],
+    "blocks": [
+      {
+        "source": "微博·对外叙事与人设",
+        "icon": "🐦",
+        "tags": [
+          "社交媒体",
+          "个人展示"
+        ],
+        "title": "微博上仅有的存在感",
+        "description": "用户在微博上几乎没有发布内容，仅有基本信息展示，显示出较低的社交活跃度。"
+      },
+      {
+        "source": "网易云音乐·音乐品味",
+        "icon": "🎵",
+        "tags": [
+          "音乐",
+          "个人喜好"
+        ],
+        "title": "音乐爱好与个性展现",
+        "description": "在网易云音乐上，用户通过昵称和签名展现了自己的音乐品味，关注较多的用户，显示出对音乐的热爱与社交互动的渴望。"
+      },
+      {
+        "source": "小红书·数据不可用",
+        "icon": "📕",
+        "tags": [
+          "暂无正文"
+        ],
+        "title": "未能读取有效主页正文",
+        "description": "该链接在当前环境下未返回可读内容（常见原因：登录墙、反爬或纯脚本页）。未新增臆测；你可补充文字自述帮助档案完整。"
+      },
+      {
+        "source": "抖音·数据不可用",
+        "icon": "🎵",
+        "tags": [
+          "暂无正文"
+        ],
+        "title": "未能读取有效主页正文",
+        "description": "该链接在当前环境下未返回可读内容（常见原因：登录墙、反爬或纯脚本页）。未新增臆测；你可补充文字自述帮助档案完整。"
+      },
+      {
+        "source": "豆瓣·数据不可用",
+        "icon": "🎬",
+        "tags": [
+          "暂无正文"
+        ],
+        "title": "未能读取有效主页正文",
+        "description": "该链接在当前环境下未返回可读内容（常见原因：登录墙、反爬或纯脚本页）。未新增臆测；你可补充文字自述帮助档案完整。"
+      },
+      {
+        "source": "知乎·数据不可用",
+        "icon": "📕",
+        "tags": [
+          "暂无正文"
+        ],
+        "title": "未能读取有效主页正文",
+        "description": "该链接在当前环境下未返回可读内容（常见原因：登录墙、反爬或纯脚本页）。未新增臆测；你可补充文字自述帮助档案完整。"
+      }
+    ],
+    "overall": "用户展现出对生活的独特思考，尤其在音乐方面有深厚的兴趣。尽管社交平台上活动较少，但在音乐领域的表现反映了其内心的丰富与对美的追求。用户的个性可能偏向内向，重视与亲近之人的关系。",
+    "article": {
+      "headline": "100%真实解读你的灵魂档案（2）",
+      "guaranteeIntro": "每条结论均可回查，确保无空泛套话，真实反映用户个性。",
+      "section1": {
+        "sectionTitle": "一、全维度细节拆解：用户个性与爱好",
+        "corePersonality": {
+          "heading": "（一）核心人格：ISFP型",
+          "pillars": [
+            {
+              "label": "自由与探索",
+              "bullets": [
+                "用户展现出对生活的独特思考，尤其在音乐方面有深厚的兴趣。",
+                "在社交平台上的活跃度较低，可能偏向内向，重视与亲近之人的关系。"
+              ]
+            }
+          ]
+        },
+        "hobbies": {
+          "heading": "（二）兴趣爱好：音乐与美的追求",
+          "fixedGroups": [
+            {
+              "groupTitle": "核心固定爱好",
+              "bullets": [
+                "热爱音乐，常在网易云音乐上聆听各种风格的歌曲。"
+              ]
+            },
+            {
+              "groupTitle": "日常休闲爱好",
+              "bullets": [
+                "喜欢与朋友分享美食，享受与在乎的人相处的时光。"
+              ]
+            }
+          ],
+          "casualBullets": []
+        },
+        "speakingStyle": {
+          "heading": "（三）说话风格：简洁而富有感情",
+          "evidenceNote": "材料来源于用户自述与社交平台信息。",
+          "coreTone": "用户的表达风格简洁明了，注重情感的真实传达。",
+          "detailBullets": [
+            "在表达个人情感时，使用直接而真诚的语言。",
+            "倾向于分享内心深处的想法，展现出对生活的思考。",
+            "在社交互动中，保持低调而不失温暖的态度。",
+            "与人交流时，注重对方的感受，展现出同理心。"
+          ]
+        },
+        "values": {
+          "heading": "（四）三观内核：人生观与价值观",
+          "dimensions": [
+            {
+              "label": "事业观",
+              "content": "倾向于追求个人兴趣，重视工作与生活的平衡。"
+            },
+            {
+              "label": "婚恋观",
+              "content": "重视与伴侣的情感连接，喜欢与在乎的人共度时光。"
+            },
+            {
+              "label": "生活观",
+              "content": "热爱生活中的小确幸，享受简单而美好的时刻。"
+            },
+            {
+              "label": "社交观",
+              "content": "倾向于小范围的深度交流，而非广泛的社交活动。"
+            }
+          ]
+        }
+      },
+      "section2": {
+        "sectionTitle": "二、和你灵魂高度契合的3位名人，以及最适配你的人生参考",
+        "celebrities": [
+          {
+            "order": 1,
+            "name": "李宇春",
+            "angle": "音乐与个性兼具的代表",
+            "evidence": "李宇春在音乐上展现出独特的风格，深受粉丝喜爱，体现了自由与自我探索的精神。"
+          },
+          {
+            "order": 2,
+            "name": "周杰伦",
+            "angle": "情感表达与音乐才华的结合",
+            "evidence": "周杰伦的音乐作品常常融入个人情感，反映出对生活的深刻理解与细腻的情感表达。"
+          },
+          {
+            "order": 3,
+            "name": "蔡依林",
+            "angle": "多样化的艺术表现与个人魅力",
+            "evidence": "蔡依林在音乐与舞蹈上的多样化展现，体现了对艺术的追求与个性化的表达。"
+          }
+        ],
+        "bestPick": {
+          "name": "李宇春",
+          "summary": "李宇春的音乐与个人魅力与用户的个性高度契合，能够在艺术与情感表达上提供灵感与参考。"
+        }
+      },
+      "section3": {
+        "sectionTitle": "三、你的AI分身「自由探索者」的一天：",
+        "personaName": "自由探索者",
+        "personaCore": "热爱音乐与生活，追求内心的真实与自由。",
+        "timeline": [
+          {
+            "clock": "07:30",
+            "paragraph": "醒来，享受一杯咖啡，听着喜欢的音乐。"
+          },
+          {
+            "clock": "09:00",
+            "paragraph": "开始一天的工作，偶尔在空闲时浏览音乐平台。"
+          },
+          {
+            "clock": "12:00",
+            "paragraph": "与朋友共进午餐，分享最近听到的好歌。"
+          },
+          {
+            "clock": "14:00",
+            "paragraph": "继续工作，思考创意与灵感。"
+          },
+          {
+            "clock": "16:00",
+            "paragraph": "下班后，去音乐咖啡馆放松，享受现场表演。"
+          },
+          {
+            "clock": "18:00",
+            "paragraph": "回家，准备晚餐，听着自己喜欢的播放列表。"
+          },
+          {
+            "clock": "21:00",
+            "paragraph": "与朋友聚会，分享彼此的音乐发现。"
+          },
+          {
+            "clock": "22:30",
+            "paragraph": "在床上阅读，享受安静的夜晚。"
+          }
+        ]
+      }
+    }
+  },
+  "reportSource": "openai"
+}

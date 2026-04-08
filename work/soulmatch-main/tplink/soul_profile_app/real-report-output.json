@@ -1,0 +1,255 @@
+{
+  "user": {
+    "id": "cmnhag6iu0000guubgvo622ia",
+    "email": "debug@soulmatch.local"
+  },
+  "scrapes": [
+    {
+      "platform": "weibo",
+      "ok": true,
+      "method": "weibo-ajax-api",
+      "excerptLength": 39,
+      "hasScreenshot": true
+    },
+    {
+      "platform": "xhs",
+      "ok": true,
+      "method": "playwright-screenshot",
+      "excerptLength": 16,
+      "hasScreenshot": true
+    },
+    {
+      "platform": "douyin",
+      "ok": true,
+      "method": "playwright-screenshot",
+      "excerptLength": 16,
+      "hasScreenshot": true
+    },
+    {
+      "platform": "netease",
+      "ok": true,
+      "method": "netease-api-v1",
+      "excerptLength": 68,
+      "hasScreenshot": false
+    },
+    {
+      "platform": "douban",
+      "ok": false,
+      "method": "none",
+      "excerptLength": 0,
+      "hasScreenshot": false
+    },
+    {
+      "platform": "zhihu",
+      "ok": false,
+      "method": "none",
+      "excerptLength": 0,
+      "hasScreenshot": false
+    }
+  ],
+  "screenshotCount": 3,
+  "report": {
+    "mbti": "ISFJ",
+    "title": "温暖的守护者",
+    "avatarTags": [
+      "善良",
+      "踏实",
+      "细腻"
+    ],
+    "blocks": [
+      {
+        "source": "微博·对外叙事与人设",
+        "icon": "📱",
+        "tags": [
+          "社交",
+          "低调"
+        ],
+        "title": "低调的社交者，珍视关系",
+        "description": "在微博平台，用户展示了其低调的社交风格，粉丝数仅为1，关注数为4，微博数为0，表明其更倾向于私密的社交环境，珍视身边的人际关系。"
+      },
+      {
+        "source": "网易云音乐·音乐偏好",
+        "icon": "🎶",
+        "tags": [
+          "音乐",
+          "情感"
+        ],
+        "title": "情感丰富的音乐爱好者",
+        "description": "在网易云音乐上，用户昵称为tttttyyyylp，签名中仅用一个简单的表情符号来表达情感，显示出其内心的细腻与温暖。关注数为60，粉丝数为4，听歌数达到5600，表明其对音乐的热爱与倾听的习惯。"
+      },
+      {
+        "source": "小红书·公开线索",
+        "icon": "📕",
+        "tags": [
+          "平台摘录"
+        ],
+        "title": "该平台的可见信息",
+        "description": "[截图已获取，交由视觉模型分析]"
+      },
+      {
+        "source": "抖音·公开线索",
+        "icon": "🎵",
+        "tags": [
+          "平台摘录"
+        ],
+        "title": "该平台的可见信息",
+        "description": "[截图已获取，交由视觉模型分析]"
+      },
+      {
+        "source": "豆瓣·数据不可用",
+        "icon": "🎬",
+        "tags": [
+          "暂无正文"
+        ],
+        "title": "未能读取有效主页正文",
+        "description": "该链接在当前环境下未返回可读内容（常见原因：登录墙、反爬或纯脚本页）。未新增臆测；你可补充文字自述帮助档案完整。"
+      },
+      {
+        "source": "知乎·数据不可用",
+        "icon": "📕",
+        "tags": [
+          "暂无正文"
+        ],
+        "title": "未能读取有效主页正文",
+        "description": "该链接在当前环境下未返回可读内容（常见原因：登录墙、反爬或纯脚本页）。未新增臆测；你可补充文字自述帮助档案完整。"
+      }
+    ],
+    "overall": "用户展现出温暖、细腻的个性，倾向于珍视身边的人际关系，喜欢通过音乐表达情感。社交平台上的低调表现和音乐偏好相结合，形成了一个温暖的守护者形象。",
+    "article": {
+      "headline": "100%真实解读你的灵魂档案（共4平台）",
+      "guaranteeIntro": "每条结论均可回查，真实数据支撑，避免空泛描述。",
+      "section1": {
+        "sectionTitle": "一、全维度细节拆解：温暖的守护者",
+        "corePersonality": {
+          "heading": "（一）核心人格：细腻与温暖",
+          "pillars": [
+            {
+              "label": "ISFJ型人格底色",
+              "bullets": [
+                "用户展现出细腻的情感，关注身边的人，倾向于低调的社交方式。",
+                "在社交平台上，用户的互动十分有限，显示出其对隐私的重视。"
+              ]
+            }
+          ]
+        },
+        "hobbies": {
+          "heading": "（二）兴趣爱好：音乐与人际关系",
+          "fixedGroups": [
+            {
+              "groupTitle": "核心固定爱好",
+              "bullets": [
+                "用户热爱音乐，听歌数量达到5600，展现出其对音乐的深厚兴趣。"
+              ]
+            },
+            {
+              "groupTitle": "日常休闲爱好",
+              "bullets": [
+                "喜欢与在乎的人共度时光，珍视每一段关系。"
+              ]
+            }
+          ],
+          "casualBullets": []
+        },
+        "speakingStyle": {
+          "heading": "（三）说话风格：简约而真诚",
+          "evidenceNote": "材料来源于社交平台的用户自述与数据。",
+          "coreTone": "用户的表达方式简洁而真诚，常用简单的符号表达情感。",
+          "detailBullets": [
+            "在网易云音乐的签名中，仅用一个表情符号，展现出其内心的温暖。",
+            "社交平台上的互动较少，显示出其不喜欢过于复杂的社交关系。",
+            "在微博上，用户的低调表现进一步印证了其内向的特质。",
+            "整体的表达风格显得非常真诚，给人一种温暖的感觉。"
+          ]
+        },
+        "values": {
+          "heading": "（四）三观内核：对生活的温暖理解",
+          "dimensions": [
+            {
+              "label": "事业观",
+              "content": "用户可能倾向于稳定的工作环境，重视团队合作与和谐。"
+            },
+            {
+              "label": "婚恋观",
+              "content": "用户珍视与伴侣的情感连接，倾向于长久而稳定的关系。"
+            },
+            {
+              "label": "生活观",
+              "content": "生活中重视简单的快乐，喜欢与朋友和家人分享时光。"
+            },
+            {
+              "label": "社交观",
+              "content": "用户在社交中表现出低调与内敛，重视质量而非数量。"
+            }
+          ]
+        }
+      },
+      "section2": {
+        "sectionTitle": "二、和你灵魂高度契合的3位名人，以及最适配你的人生参考",
+        "celebrities": [
+          {
+            "order": 1,
+            "name": "周杰伦",
+            "angle": "音乐才子，情感细腻",
+            "evidence": "周杰伦的音乐充满情感，深受粉丝喜爱，与你的音乐偏好高度契合。"
+          },
+          {
+            "order": 2,
+            "name": "林志玲",
+            "angle": "温柔优雅，善于沟通",
+            "evidence": "林志玲的亲和力与温暖形象，与用户的个性特质相符。"
+          },
+          {
+            "order": 3,
+            "name": "蔡依林",
+            "angle": "多才多艺，情感丰富",
+            "evidence": "蔡依林在音乐与表演上的多元化表现，展现出与用户相似的细腻情感。"
+          }
+        ],
+        "bestPick": {
+          "name": "周杰伦",
+          "summary": "周杰伦的音乐作品深刻且富有情感，能够引起用户的共鸣，适合作为人生参考。"
+        }
+      },
+      "section3": {
+        "sectionTitle": "三、你的AI分身「温暖守护者」的一天：",
+        "personaName": "温暖守护者",
+        "personaCore": "分身设定为一个关心他人、热爱音乐的人。",
+        "timeline": [
+          {
+            "clock": "07:30",
+            "paragraph": "清晨起床，享用一杯温暖的咖啡，准备迎接新的一天。"
+          },
+          {
+            "clock": "09:00",
+            "paragraph": "听着喜欢的音乐，享受宁静的早晨时光。"
+          },
+          {
+            "clock": "12:00",
+            "paragraph": "和朋友共进午餐，分享彼此的生活点滴。"
+          },
+          {
+            "clock": "14:00",
+            "paragraph": "在公园散步，放松心情，享受大自然的美好。"
+          },
+          {
+            "clock": "16:00",
+            "paragraph": "在家中安静地听音乐，放空自己，享受独处时光。"
+          },
+          {
+            "clock": "18:00",
+            "paragraph": "与家人一起吃晚餐，分享一天的经历。"
+          },
+          {
+            "clock": "21:00",
+            "paragraph": "观看喜欢的电影，放松心情，享受欢乐时光。"
+          },
+          {
+            "clock": "22:30",
+            "paragraph": "准备就寝，回顾美好的日常，期待明天的到来。"
+          }
+        ]
+      }
+    }
+  },
+  "reportSource": "openai"
+}

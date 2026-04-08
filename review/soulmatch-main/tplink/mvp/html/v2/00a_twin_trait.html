@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=390, initial-scale=1.0">
+<title>选择分身气质 · SoulMatch</title>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; -webkit-font-smoothing:antialiased; }
+body {
+  width:390px; height:844px; overflow:hidden;
+  font-family:-apple-system,'PingFang SC','Helvetica Neue',sans-serif;
+  background:radial-gradient(ellipse 120% 80% at 50% 0%, #4c2a85 0%, #1a0a2e 45%, #0f0518 100%);
+  color:#fff; display:flex; flex-direction:column;
+}
+.status-bar {
+  height:54px; display:flex; align-items:center; justify-content:space-between;
+  padding:14px 18px 0; flex-shrink:0;
+}
+.status-time { font-size:15px; font-weight:600; color:#fff; }
+.status-icons { display:flex; align-items:center; gap:6px; }
+.status-icons svg { color:#fff; }
+.header-row {
+  display:flex; align-items:center; padding:6px 16px 12px; gap:8px;
+}
+.back-btn {
+  width:40px; height:40px; border-radius:50%;
+  background:rgba(255,255,255,.1); border:none; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; color:#fff;
+}
+.title-block { text-align:center; flex:1; padding-right:40px; }
+.title { font-size:20px; font-weight:700; letter-spacing:-0.3px; }
+.subtitle { font-size:13px; color:rgba(255,255,255,.65); margin-top:4px; line-height:1.4; }
+
+.stage {
+  flex:1; position:relative; display:flex; flex-direction:column; align-items:center;
+  justify-content:flex-start; padding-top:8px;
+}
+.spotlight {
+  position:absolute; top:0; left:50%; transform:translateX(-50%);
+  width:280px; height:220px;
+  background:radial-gradient(ellipse at 50% 0%, rgba(255,224,102,.35) 0%, transparent 65%);
+  pointer-events:none;
+}
+.sparkle {
+  position:absolute; width:6px; height:6px; border-radius:50%;
+  background:#FFE066; box-shadow:0 0 12px #FFE066; opacity:.9;
+  animation:tw 2.2s ease-in-out infinite;
+}
+@keyframes tw { 0%,100%{opacity:.4; transform:scale(.8);} 50%{opacity:1; transform:scale(1);} }
+.sparkle:nth-child(2){ left:28%; top:18%; animation-delay:.3s; }
+.sparkle:nth-child(3){ right:26%; top:22%; animation-delay:.7s; }
+.sparkle:nth-child(4){ left:40%; top:8%; animation-delay:1.1s; }
+
+.pedestal {
+  margin-top:108px; width:200px; height:56px;
+  background:radial-gradient(ellipse at 50% 50%, rgba(80,40,120,.9) 0%, transparent 70%);
+  border-radius:50%; z-index:1;
+}
+.egg-wrap {
+  position:absolute; top:96px; z-index:2;
+  filter:drop-shadow(0 12px 24px rgba(0,0,0,.4));
+}
+.egg {
+  width:120px; height:150px;
+  border-radius:50% 50% 48% 48% / 58% 58% 42% 42%;
+  background:
+    radial-gradient(ellipse 80% 70% at 40% 25%, rgba(255,255,255,.45) 0%, transparent 45%),
+    radial-gradient(ellipse at 50% 100%, #1e4a6e 0%, #4a9fd4 35%, #6ec8ff 70%, #3d7fba 100%);
+  box-shadow:inset -8px -12px 24px rgba(0,0,0,.25), inset 4px 8px 16px rgba(255,255,255,.2);
+}
+
+.trait-list { width:100%; padding:0 20px 24px; z-index:3; display:flex; flex-direction:column; gap:10px; }
+.trait-btn {
+  display:flex; align-items:center; gap:14px;
+  width:100%; padding:14px 16px; border-radius:18px; border:2px solid transparent;
+  background:rgba(255,255,255,.08); color:#fff; font-size:15px; font-weight:600;
+  cursor:pointer; font-family:inherit; transition:all .2s; text-align:left;
+}
+.trait-btn:hover { background:rgba(255,255,255,.12); }
+.trait-btn.selected {
+  background:linear-gradient(135deg, rgba(255,224,102,.95), rgba(255,200,120,.88));
+  color:#3d2b00; border-color:rgba(255,255,255,.5);
+  box-shadow:0 8px 32px rgba(255,224,102,.25);
+}
+.trait-btn.selected .lucide { color:#5c4010; }
+.trait-icon {
+  width:40px; height:40px; border-radius:14px;
+  background:rgba(255,255,255,.12); display:flex; align-items:center; justify-content:center;
+  flex-shrink:0;
+}
+.trait-btn.selected .trait-icon { background:rgba(255,255,255,.5); }
+.trait-label { flex:1; }
+.trait-hint { font-size:12px; font-weight:500; color:rgba(255,255,255,.5); }
+.trait-btn.selected .trait-hint { color:rgba(60,40,0,.65); }
+
+.footer-hint {
+  text-align:center; font-size:12px; color:rgba(255,255,255,.45); padding-bottom:20px;
+}
+.btn-next-wrap { padding:0 20px 18px; }
+.btn-next {
+  width:100%; padding:16px; border:none; border-radius:16px;
+  background:linear-gradient(135deg, #a78bfa, #6C5CE7);
+  color:#fff; font-size:17px; font-weight:600; font-family:inherit;
+  cursor:pointer; box-shadow:0 8px 28px rgba(108,92,231,.45);
+  display:flex; align-items:center; justify-content:center; gap:8px;
+}
+.btn-next:active { transform:scale(.98); }
+</style>
+</head>
+<body>
+<div class="status-bar">
+  <span class="status-time">9:41</span>
+  <div class="status-icons">
+    <svg width="17" height="12" viewBox="0 0 17 12" fill="none"><rect x="0" y="3" width="3" height="9" rx="1" fill="currentColor"/><rect x="4.5" y="2" width="3" height="10" rx="1" fill="currentColor"/><rect x="9" y="0.5" width="3" height="11.5" rx="1" fill="currentColor"/><rect x="13.5" y="0" width="3" height="12" rx="1" fill="currentColor" opacity=".35"/></svg>
+    <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 2.5C10.2 2.5 12.2 3.4 13.6 4.9L15 3.4C13.2 1.5 10.7 0.5 8 0.5C5.3 0.5 2.8 1.5 1 3.4L2.4 4.9C3.8 3.4 5.8 2.5 8 2.5Z" fill="currentColor"/><path d="M8 5.5C9.4 5.5 10.7 6.1 11.6 7.1L13 5.6C11.7 4.2 9.9 3.5 8 3.5C6.1 3.5 4.3 4.2 3 5.6L4.4 7.1C5.3 6.1 6.6 5.5 8 5.5Z" fill="currentColor"/><circle cx="8" cy="10" r="1.5" fill="currentColor"/></svg>
+    <svg width="25" height="12" viewBox="0 0 25 12" fill="none"><rect x=".5" y=".5" width="21" height="11" rx="3.5" stroke="currentColor" stroke-opacity=".45"/><rect x="2" y="2" width="16" height="8" rx="2" fill="currentColor"/><path d="M23 4.5V7.5C23.8 7.2 24.5 6.5 24.5 6 24.5 5.5 23.8 4.8 23 4.5Z" fill="currentColor" opacity=".45"/></svg>
+  </div>
+</div>
+<div class="header-row">
+  <button class="back-btn" type="button" aria-label="返回">
+    <i data-lucide="chevron-left" style="width:22px;height:22px"></i>
+  </button>
+  <div class="title-block">
+    <div class="title">为你的 AI 分身选一种气质</div>
+    <div class="subtitle">SoulMatch 会据此调整分身的说话风格，你也可以稍后在档案里更改。</div>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="spotlight"></div>
+  <span class="sparkle" style="left:22%;top:12%"></span>
+  <span class="sparkle" style="right:20%;top:14%"></span>
+  <span class="sparkle" style="left:48%;top:6%"></span>
+  <div class="egg-wrap">
+    <div class="egg"></div>
+  </div>
+  <div class="pedestal-line" style="display:none"></div>
+  <div class="pedestal"></div>
+</div>
+
+<div class="trait-list">
+  <button type="button" class="trait-btn selected" data-trait="warm">
+    <span class="trait-icon"><i data-lucide="sparkles" class="lucide"></i></span>
+    <span class="trait-label">温暖助力<div><span class="trait-hint">像朋友一样鼓励你开口</span></div></span>
+  </button>
+  <button type="button" class="trait-btn" data-trait="humor">
+    <span class="trait-icon"><i data-lucide="laugh" class="lucide"></i></span>
+    <span class="trait-label">幽默破冰<div><span class="trait-hint">用轻松口吻化解尴尬</span></div></span>
+  </button>
+  <button type="button" class="trait-btn" data-trait="real">
+    <span class="trait-icon"><i data-lucide="scale" class="lucide"></i></span>
+    <span class="trait-label">清醒务实<div><span class="trait-hint">帮你看清单条与风险</span></div></span>
+  </button>
+  <button type="button" class="trait-btn" data-trait="direct">
+    <span class="trait-icon"><i data-lucide="message-square-more" class="lucide"></i></span>
+    <span class="trait-label">直率表达<div><span class="trait-hint">少绕弯，把话说明白</span></div></span>
+  </button>
+</div>
+
+<div class="btn-next-wrap">
+  <button type="button" class="btn-next" id="go-hatch">
+    继续：唤醒分身
+    <i data-lucide="arrow-right" style="width:20px;height:20px"></i>
+  </button>
+</div>
+<div class="footer-hint">这颗「灵魂蛋」里，藏着即将替你识人、接话的分身。</div>
+
+<script>
+document.querySelectorAll('.trait-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.trait-btn').forEach(function(b) { b.classList.remove('selected'); });
+    btn.classList.add('selected');
+  });
+});
+document.getElementById('go-hatch').addEventListener('click', function() {
+  window.location.href = '00b_twin_hatch.html';
+});
+document.addEventListener('DOMContentLoaded', function() { if (typeof lucide !== 'undefined') lucide.createIcons(); });
+</script>
+</body>
+</html>

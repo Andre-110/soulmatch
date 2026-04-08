@@ -1,0 +1,148 @@
+{
+  "mbti": "必须输出四字 MBTI 类型（如 INFJ、ENFP）或融合型（如 ISFJ×INFP）",
+  "mbtiDimensions": [
+    {
+      "code": "I",
+      "label": "I 内向",
+      "score": 76,
+      "note": "偏向独处充电"
+    },
+    {
+      "code": "S",
+      "label": "S 实感",
+      "score": 72,
+      "note": "更看现实细节"
+    },
+    {
+      "code": "F",
+      "label": "F 感性",
+      "score": 84,
+      "note": "判断更看感受"
+    },
+    {
+      "code": "J",
+      "label": "J 计划",
+      "score": 80,
+      "note": "节奏更有序"
+    }
+  ],
+  "title": "16字以内诗意称号",
+  "avatarTags": ["标签1", "标签2", "标签3"],
+  "blocks": [
+    {
+      "source": "平台名·维度，如 小红书·对外叙事与人设",
+      "icon": "单个 emoji",
+      "tags": ["深层标签1", "深层标签2"],
+      "title": "该平台上的核心结论，14字以内",
+      "description": "260～520汉字：平台角色定位、可核验细节、跨平台对比（若可）、收束句"
+    }
+  ],
+  "overall": "220～420汉字：首屏浓缩总评，优先写网易云具体歌名/风格和截图生活碎片细节，结尾给3～6个#标签",
+  "article": {
+    "headline": "主标题（含实锤承诺与平台数 N）",
+    "guaranteeIntro": "开篇 2～4 句可核验承诺",
+    "section2": {
+      "sectionTitle": "二、和你灵魂高度契合的3位名人",
+      "celebrities": [
+        {
+          "order": 1,
+          "name": "姓名或常用艺名",
+          "similarityScore": 8,
+          "recommendReason": "温柔共情稳"
+        },
+        {
+          "order": 2,
+          "name": "姓名或常用艺名",
+          "similarityScore": 7,
+          "recommendReason": "松弛有趣搭"
+        },
+        {
+          "order": 3,
+          "name": "姓名或常用艺名",
+          "similarityScore": 7,
+          "recommendReason": "价值观同频"
+        }
+      ]
+    },
+    "section3": {
+      "sectionTitle": "三、多维人格测试",
+      "fourHumorTheory": { "type": "多血质", "note": "活泼爱社交" },
+      "lovePersona16": { "type": "恋爱人格类型", "note": "十字内说明" },
+      "animalPersona": { "type": "动物人格类型", "note": "十字内说明" },
+      "todayFortune": {
+        "love": "爱情运势十字内",
+        "career": "事业运势十字内",
+        "wealth": "财运运势十字内"
+      },
+      "fiveFactorPersona": { "type": "五型人格类型", "note": "十字内说明" },
+      "fruitPersona": { "type": "水果人格类型", "note": "十字内说明" },
+      "drinkPersona": { "type": "饮品人格类型", "note": "十字内说明" }
+    },
+    "section4": {
+      "sectionTitle": "四、你的AI分身的一天",
+      "personaName": "中文昵称",
+      "personaCore": "分身设定 1～2 句",
+      "finalCard": {
+        "intro": "报告完成后的收束句，1 句",
+        "summaryLines": [
+          "你的人格：MBTI + 称号",
+          "你的热爱：具体歌名 / 地点 / 食物 / 书名",
+          "你的关系倾向或生活节奏：优先来自问卷",
+          "你的工作或日常重心：必须来自材料",
+          "本轮共整合 X 平台 + Y 张截图 + 30题问卷结果"
+        ],
+        "closingLine": "一句有记忆点的结束语"
+      },
+      "dayParts": [
+        {
+          "order": 1,
+          "slot": "晨起",
+          "clock": "08:00",
+          "paragraph": "需包含音乐平台具体歌曲名，来源标签带 #网易云音乐#。",
+          "sourceTag": "#网易云音乐#",
+          "detailTags": ["#歌曲名#"]
+        },
+        {
+          "order": 2,
+          "slot": "独处",
+          "clock": "10:00",
+          "paragraph": "需包含兴趣爱好细节（如下棋/咖啡/喝茶）和数据来源标签，优先使用问卷里的周末/日常答案。",
+          "sourceTag": "#问卷Q28# 或 #来源标签#",
+          "detailTags": ["#兴趣细节#"]
+        },
+        {
+          "order": 3,
+          "slot": "午餐",
+          "clock": "12:30",
+          "paragraph": "需包含具体食物名和来源标签；如果问卷只写了做饭/吃饭但没写菜名，就不要脑补菜名。",
+          "sourceTag": "#问卷Q27# 或 #来源标签#",
+          "detailTags": ["#食物细节#"]
+        },
+        {
+          "order": 4,
+          "slot": "工作",
+          "clock": "14:00",
+          "paragraph": "需包含工作内容细节和来源标签；若职业信息不足，可写日常重心与执行节奏。",
+          "sourceTag": "#问卷# 或 #来源标签#",
+          "detailTags": ["#工作细节#"]
+        },
+        {
+          "order": 5,
+          "slot": "玩耍",
+          "clock": "18:00",
+          "paragraph": "需包含娱乐方式细节和来源标签，优先参考问卷里的周末偏好、探索欲、非传统约会接受度。",
+          "sourceTag": "#问卷Q22# / #问卷Q25# / #来源标签#",
+          "detailTags": ["#玩耍细节#"]
+        },
+        {
+          "order": 6,
+          "slot": "阅读",
+          "clock": "21:30",
+          "paragraph": "需包含书名/阅读内容细节和来源标签；若没有具体书名，不要硬写书名。",
+          "sourceTag": "#问卷Q28# 或 #来源标签#",
+          "detailTags": ["#阅读细节#"]
+        }
+      ]
+    }
+  }
+}

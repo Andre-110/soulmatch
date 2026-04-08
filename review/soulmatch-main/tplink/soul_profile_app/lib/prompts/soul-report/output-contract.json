@@ -1,0 +1,111 @@
+{
+  "mbti": "必须输出四字 MBTI 类型（如 INFJ、ENFP）或融合型（如 ISFJ×INFP）",
+  "title": "16字以内诗意称号",
+  "avatarTags": ["标签1", "标签2", "标签3"],
+  "blocks": [
+    {
+      "source": "平台名·维度，如 小红书·对外叙事与人设",
+      "icon": "单个 emoji",
+      "tags": ["深层标签1", "深层标签2"],
+      "title": "该平台上的核心结论，14字以内",
+      "description": "260～520汉字：平台角色定位、可核验细节、跨平台对比（若可）、收束句"
+    }
+  ],
+  "overall": "220～420汉字：首屏浓缩总评，优先写网易云具体歌名/风格和截图生活碎片细节，结尾给3～6个#标签",
+  "article": {
+    "headline": "主标题（含实锤承诺与平台数 N）",
+    "guaranteeIntro": "开篇 2～4 句可核验承诺",
+    "section2": {
+      "sectionTitle": "二、和你灵魂高度契合的3位名人",
+      "celebrities": [
+        {
+          "order": 1,
+          "name": "姓名或常用艺名",
+          "similarityScore": 88,
+          "recommendReason": "温柔共情稳"
+        },
+        {
+          "order": 2,
+          "name": "姓名或常用艺名",
+          "similarityScore": 83,
+          "recommendReason": "松弛有趣搭"
+        },
+        {
+          "order": 3,
+          "name": "姓名或常用艺名",
+          "similarityScore": 79,
+          "recommendReason": "价值观同频"
+        }
+      ]
+    },
+    "section3": {
+      "sectionTitle": "三、多维人格测试",
+      "fourHumorTheory": { "type": "多血质", "note": "活泼爱社交" },
+      "lovePersona16": { "type": "恋爱人格类型", "note": "十字内说明" },
+      "animalPersona": { "type": "动物人格类型", "note": "十字内说明" },
+      "todayFortune": {
+        "love": "爱情运势十字内",
+        "career": "事业运势十字内",
+        "wealth": "财运运势十字内"
+      },
+      "fiveFactorPersona": { "type": "五型人格类型", "note": "十字内说明" },
+      "fruitPersona": { "type": "水果人格类型", "note": "十字内说明" },
+      "drinkPersona": { "type": "饮品人格类型", "note": "十字内说明" }
+    },
+    "section4": {
+      "sectionTitle": "四、你的AI分身的一天",
+      "personaName": "中文昵称",
+      "personaCore": "分身设定 1～2 句",
+      "dayParts": [
+        {
+          "order": 1,
+          "slot": "晨起",
+          "clock": "08:00",
+          "paragraph": "需包含音乐平台具体歌曲名，来源标签带 #网易云音乐#。",
+          "sourceTag": "#网易云音乐#",
+          "detailTags": ["#歌曲名#"]
+        },
+        {
+          "order": 2,
+          "slot": "独处",
+          "clock": "10:00",
+          "paragraph": "需包含兴趣爱好细节（如下棋/咖啡/喝茶）和数据来源标签。",
+          "sourceTag": "#来源标签#",
+          "detailTags": ["#兴趣细节#"]
+        },
+        {
+          "order": 3,
+          "slot": "午餐",
+          "clock": "12:30",
+          "paragraph": "需包含具体食物名（如照烧牛肉面）和来源标签（如 #你的生活照片#）。",
+          "sourceTag": "#来源标签#",
+          "detailTags": ["#食物细节#"]
+        },
+        {
+          "order": 4,
+          "slot": "工作",
+          "clock": "14:00",
+          "paragraph": "需包含工作内容细节和来源标签。",
+          "sourceTag": "#来源标签#",
+          "detailTags": ["#工作细节#"]
+        },
+        {
+          "order": 5,
+          "slot": "玩耍",
+          "clock": "18:00",
+          "paragraph": "需包含娱乐方式细节和来源标签。",
+          "sourceTag": "#来源标签#",
+          "detailTags": ["#玩耍细节#"]
+        },
+        {
+          "order": 6,
+          "slot": "阅读",
+          "clock": "21:30",
+          "paragraph": "需包含书名/阅读内容细节和来源标签。",
+          "sourceTag": "#来源标签#",
+          "detailTags": ["#阅读细节#"]
+        }
+      ]
+    }
+  }
+}

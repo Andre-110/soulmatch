@@ -1,0 +1,9 @@
+# 大文件
+tplink/soul_profile_app/public/music/bgm/*.mp3
+
+# 临时文件
+*.log
+.DS_Store
+node_modules/
+.next/
+.env.local

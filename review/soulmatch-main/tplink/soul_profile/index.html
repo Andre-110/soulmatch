@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>我的灵魂档案 · SoulMatch</title>
+    <!-- Modern web font -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Dynamic Animated Background -->
+        <div class="bg-gradient"></div>
+        <div class="stars-container" id="stars"></div>
+        <div class="glow-orb orb-1"></div>
+        <div class="glow-orb orb-2"></div>
+        
+        <!-- Main Content Area -->
+        <main id="view-container" class="view-container">
+            <!-- Views will be dynamically swapped here by app.js -->
+        </main>
+    </div>
+
+    <!-- Templates for different views -->
+    
+    <!-- 0: Home Intro -->
+    <template id="tpl-home">
+        <div class="view-content view-home">
+            <div class="hero-icon-container">
+                <div class="hero-icon">✨</div>
+            </div>
+            <h1 class="title">生成你的灵魂档案</h1>
+            <p class="subtitle">在这里，我们不要表面的标签。我们将通过多维度的真实数据，还原一个最纯粹、最深刻的你。</p>
+            
+            <div class="features">
+                <div class="feature-item">
+                    <span class="f-icon">🌌</span>
+                    <span>深度多维解析</span>
+                </div>
+                <div class="feature-item">
+                    <span class="f-icon">🔒</span>
+                    <span>数据绝对隐私</span>
+                </div>
+                <div class="feature-item">
+                    <span class="f-icon">🤝</span>
+                    <span>寻找灵魂共振</span>
+                </div>
+            </div>
+
+            <div class="bottom-action">
+                <button class="btn btn-primary btn-glow" onclick="app.nextStep()">开启探索之旅体验</button>
+            </div>
+        </div>
+    </template>
+
+    <!-- 1: Step 1 - Social Screenshots -->
+    <template id="tpl-step1">
+        <div class="view-content view-step">
+            <div class="step-header">
+                <button class="btn-back" onclick="app.prevStep()">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+                <div class="step-progress">
+                    <div class="step-progress-text">Step 1 of 5</div>
+                    <div class="progress-bar"><div class="progress-fill" style="width: 20%;"></div></div>
+                </div>
+                <div class="btn-back" style="opacity: 0; pointer-events: none;">X</div>
+            </div>
+            
+            <div class="step-body">
+                <h2 class="step-title">上传社交截图</h2>
+                <p class="step-desc">朋友圈、QQ空间或聊天记录，展示了你最真实的社交温度。</p>
+                
+                <div class="upload-area" onclick="this.classList.toggle('active')">
+                    <div class="upload-icon">📸</div>
+                    <div class="upload-text">点击上传或在此拍摄</div>
+                    <div class="upload-hint">支持 jpg/png 格式，最多9张</div>
+                </div>
+
+                <div class="privacy-note">
+                    <span class="icon">🛡️</span> 本地加密处理，阅后即焚
+                </div>
+            </div>
+            
+            <div class="bottom-action">
+                <button class="btn btn-primary" onclick="app.nextStep()">下一步</button>
+            </div>
+        </div>
+    </template>
+
+    <!-- 2: Step 2 - Public Social Accounts -->
+    <template id="tpl-step2">
+        <div class="view-content view-step">
+            <div class="step-header">
+                <button class="btn-back" onclick="app.prevStep()">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+                <div class="step-progress">
+                    <div class="step-progress-text">Step 2 of 5</div>
+                    <div class="progress-bar"><div class="progress-fill" style="width: 40%;"></div></div>
+                </div>
+                <div class="btn-back" style="opacity: 0;">X</div>
+            </div>
+            
+            <div class="step-body">
+                <h2 class="step-title">关联公开社交账号</h2>
+                <p class="step-desc">小红书、微博或抖音，你的每一次点赞和发布都在勾勒你的数字轮廓。</p>
+                
+                <div class="platform-list">
+                    <div class="platform-item" onclick="this.classList.toggle('connected')">
+                        <div class="p-icon" style="background:#FFE6E6; color:#FF2442;">📕</div>
+                        <div class="p-info">小红书</div>
+                        <div class="p-status">未关联</div>
+                    </div>
+                    <div class="platform-item" onclick="this.classList.toggle('connected')">
+                        <div class="p-icon" style="background:#FFF0E6; color:#FF8200;">👀</div>
+                        <div class="p-info">微博账号</div>
+                        <div class="p-status">未关联</div>
+                    </div>
+                    <div class="platform-item" onclick="this.classList.toggle('connected')">
+                        <div class="p-icon" style="background:#2C2C2E; color:#FFFFFF;">🎵</div>
+                        <div class="p-info">抖音</div>
+                        <div class="p-status">未关联</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bottom-action">
+                <button class="btn btn-secondary" onclick="app.nextStep()">跳过</button>
+                <button class="btn btn-primary" onclick="app.nextStep()">下一步</button>
+            </div>
+        </div>
+    </template>
+
+    <!-- 3: Step 3 - Text Corpus -->
+    <template id="tpl-step3">
+        <div class="view-content view-step">
+            <div class="step-header">
+                <button class="btn-back" onclick="app.prevStep()">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+                <div class="step-progress">
+                    <div class="step-progress-text">Step 3 of 5</div>
+                    <div class="progress-bar"><div class="progress-fill" style="width: 60%;"></div></div>
+                </div>
+                <div class="btn-back" style="opacity: 0;">X</div>
+            </div>
+            
+            <div class="step-body">
+                <h2 class="step-title">分享你的文字语料</h2>
+                <p class="step-desc">日记、随笔、或者一段深夜的感悟，文字能最精准地映射你的内心。</p>
+                
+                <textarea class="glass-input" placeholder="写下最近让你有感触的一段话，或是直接粘贴你的随笔..." rows="6"></textarea>
+            </div>
+            
+            <div class="bottom-action">
+                <button class="btn btn-secondary" onclick="app.nextStep()">跳过</button>
+                <button class="btn btn-primary" onclick="app.nextStep()">下一步</button>
+            </div>
+        </div>
+    </template>
+
+    <!-- 4: Step 4 - Media Preferences -->
+    <template id="tpl-step4">
+        <div class="view-content view-step">
+            <div class="step-header">
+                <button class="btn-back" onclick="app.prevStep()">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+                <div class="step-progress">
+                    <div class="step-progress-text">Step 4 of 5</div>
+                    <div class="progress-bar"><div class="progress-fill" style="width: 80%;"></div></div>
+                </div>
+                <div class="btn-back" style="opacity: 0;">X</div>
+            </div>
+            
+            <div class="step-body">
+                <h2 class="step-title">关联音乐与阅读</h2>
+                <p class="step-desc">你的歌单和书架，是你建立精神避难所的一砖一瓦。</p>
+                
+                <div class="platform-list">
+                    <div class="platform-item" onclick="this.classList.toggle('connected')">
+                        <div class="p-icon" style="background:#FFEAEA; color:#E60026;">🎵</div>
+                        <div class="p-info">网易云音乐</div>
+                        <div class="p-status">未关联</div>
+                    </div>
+                    <div class="platform-item" onclick="this.classList.toggle('connected')">
+                        <div class="p-icon" style="background:#E6F7EA; color:#00B51D;">🎬</div>
+                        <div class="p-info">豆瓣</div>
+                        <div class="p-status">未关联</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bottom-action">
+                <button class="btn btn-secondary" onclick="app.nextStep()">跳过</button>
+                <button class="btn btn-primary" onclick="app.nextStep()">下一步</button>
+            </div>
+        </div>
+    </template>
+
+    <!-- 5: Step 5 - Voice Answers -->
+    <template id="tpl-step5">
+        <div class="view-content view-step">
+            <div class="step-header">
+                <button class="btn-back" onclick="app.prevStep()">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+                <div class="step-progress">
+                    <div class="step-progress-text">Step 5 of 5</div>
+                    <div class="progress-bar"><div class="progress-fill" style="width: 100%;"></div></div>
+                </div>
+                <div class="btn-back" style="opacity: 0;">X</div>
+            </div>
+            
+            <div class="step-body">
+                <h2 class="step-title">语音短回答</h2>
+                <p class="step-desc">用你的声音回答一个简单的问题。AI将感知你的语速、停顿和情绪色彩。</p>
+                
+                <div class="question-card">
+                    「如果明天世界末日，你今晚会做什么？」
+                </div>
+                
+                <div class="voice-record-btn" onclick="this.classList.toggle('recording')">
+                    <div class="mic-icon">🎙️</div>
+                </div>
+                <div class="record-hint">点击开始录音</div>
+            </div>
+            
+            <div class="bottom-action">
+                <button class="btn btn-primary btn-glow" onclick="app.nextStep()">完成采集，开始生成</button>
+            </div>
+        </div>
+    </template>
+
+    <!-- 6: Loading/Hatching -->
+    <template id="tpl-loading">
+        <div class="view-content view-loading">
+            <h2 class="loading-title">正在孵化你的灵魂碎片...</h2>
+            
+            <div class="hatching-container">
+                <div class="hatching-orb"></div>
+                <div class="particles-burst"></div>
+            </div>
+
+            <p class="loading-status" id="loading-text">正在分析朋友圈情绪波段...</p>
+        </div>
+    </template>
+
+    <!-- 7: Result Profile -->
+    <template id="tpl-result">
+        <div class="view-content view-result">
+            <!-- THE HOLOGRAPHIC POSTER -->
+            <div class="soul-poster" id="soul-poster-capture">
+                <!-- Foil Animation Elements -->
+                <div class="foil-shimmer"></div>
+                <!-- Giant background watermark -->
+                <div class="poster-watermark">INFJ</div>
+                
+                <div class="result-header" style="position:relative; z-index:2;">
+                    <div class="poster-date">SOULMATCH / 2026 EDITION</div>
+                    
+                    <div class="avatar-glow giant">
+                        <div class="avatar-inner"></div>
+                    </div>
+                    
+                    <h2 class="result-name editorial">匿名旅行者</h2>
+                    <p class="result-mbti">银河系理想主义者</p>
+                    
+                    <div class="tags-wrap" style="margin-top: 16px;">
+                        <span class="tag ethereal">深海漫游者</span>
+                        <span class="tag ethereal">高频共情</span>
+                        <span class="tag ethereal">精神洁癖</span>
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="result-card ethereal-card" style="z-index:2; position:relative;">
+                    <h3><span class="icon-sparkle">✦</span> 灵魂构成图谱</h3>
+                    <!-- Segmented Cyber/Mystical Bars -->
+                    <div class="trait-row">
+                        <div class="trait-head"><span>感性边界</span><span class="pct">88%</span></div>
+                        <div class="trait-bar segmented">
+                            <div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment"></div><div class="segment"></div>
+                        </div>
+                    </div>
+                    <div class="trait-row">
+                        <div class="trait-head"><span>独立精神度</span><span class="pct">76%</span></div>
+                        <div class="trait-bar segmented">
+                            <div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment"></div><div class="segment"></div><div class="segment"></div>
+                        </div>
+                    </div>
+                    <div class="trait-row">
+                        <div class="trait-head"><span>理想化指数</span><span class="pct">92%</span></div>
+                        <div class="trait-bar segmented">
+                            <div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment filled"></div><div class="segment"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="result-card ethereal-card" style="z-index:2; position:relative;">
+                    <h3><span class="icon-sparkle">✦</span> AI 灵魂印记</h3>
+                    <p class="desc-text poetic">"你是一个将丰富内心世界隐藏得很深的人。你的文字和歌单透露出一种温暖却疏离的克制感。你拥抱世界，但也随时准备撤回自己的安全岛。"</p>
+                </div>
+
+                <!-- Modern Badge Style Social Defaults -->
+                <div class="result-card ethereal-card" style="z-index:2; position:relative;">
+                    <h3><span class="icon-sparkle">✦</span> 社交出厂参数</h3>
+                    <div class="metric-grid modern">
+                        <div class="metric-block">
+                            <div class="m-val glow">300<span style="font-size:12px">%</span></div>
+                            <div class="m-lbl">耗电率</div>
+                        </div>
+                        <div class="metric-block">
+                            <div class="m-val glow">Lv.X</div>
+                            <div class="m-lbl">高频共情</div>
+                        </div>
+                        <div class="metric-block">
+                            <div class="m-val">潜水</div>
+                            <div class="m-lbl">防御机制</div>
+                        </div>
+                        <div class="metric-block">
+                            <div class="m-val">随缘</div>
+                            <div class="m-lbl">回复速度</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="qr-share-section inline">
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://soulmatch.app&color=3A1C59&bgcolor=ffffff" class="qr-code glossy" alt="Scan QR">
+                    <div class="qr-text">生成你的灵魂波段<br><span class="qr-sub">长按即可保存「高精度」专属海报</span></div>
+                </div>
+            </div>
+            <!-- END HOLOGRAPHIC POSTER -->
+
+            <!-- Actions pushed below the poster so they aren't part of the screenshot -->
+            <div class="bottom-action floating-actions">
+                <button class="btn btn-primary btn-glow" onclick="alert('海报已高清保存到相册！')">↓ 保存视觉海报到相册</button>
+                <button class="btn btn-secondary" onclick="app.reset()">重新测试</button>
+            </div>
+            <!-- Padding for scroll -->
+            <div style="height: 120px;"></div>
+        </div>
+    </template>
+
+    <script src="app.js"></script>
+</body>
+</html>
