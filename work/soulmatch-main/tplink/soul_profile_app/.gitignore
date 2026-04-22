@@ -41,3 +41,10 @@ yarn-error.log*
 next-env.d.ts
 
 /app/generated/prisma
+
+# user uploads & local debug captures (do not push)
+/public/uploads/
+/public/debug-screenshots/
+
+# stale Next build backup
+/.next.old/

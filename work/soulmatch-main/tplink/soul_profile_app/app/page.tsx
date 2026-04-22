@@ -1213,6 +1213,7 @@ export default function App() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(310_000), // 310秒超时，略大于后端maxDuration(300秒)
         body: JSON.stringify({
           submissionStartedAt: effectiveSubmissionStartedAt,
           questionnaireSummary: questionnairePayload?.questionnaireSummary || '',

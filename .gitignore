@@ -1,0 +1,11 @@
+# Accidental local build at repo root
+/.next/
+
+# Debug captures under any copy of the app
+**/public/debug-screenshots/
+
+# Archives / dumps not part of source
+*.zip
+*.tar.gz
+/bgm.zip
+/codex-export-*.tar.gz
